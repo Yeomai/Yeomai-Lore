@@ -2,6 +2,16 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+<p align="center">
+  <img width="100%" alt="Yeomai Lore product overview" src="https://github.com/user-attachments/assets/6e3ba35a-833f-46f2-ad52-19028d3335a1" />
+</p>
+
+<p align="center">
+  <img width="100%" alt="Yeomai Lore product overview" src="https://github.com/user-attachments/assets/e0c2f8f2-e3f3-4ba5-b6a8-5ac5c3fada25" />
+</p>
+
+- To use the prebuilt image, search for `yeomaiyelove/yeomai-lore-web` on Docker Hub.
+
 A self-hosted web control plane for [Epic Games Lore](https://github.com/EpicGames/lore). The prototype provides built-in accounts, organization/repository ACLs, Lore Tier 2 authorization, repository creation, branch/revision history, file browsing, downloads, text diffs, invitations, API tokens, and audit records.
 
 This is not a Gitea-compatible implementation. It does not expose Git or SSH remotes, Git Actions, pull requests, issues, or wiki pages yet. The current milestone is the phase 0–2 vertical slice described in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).

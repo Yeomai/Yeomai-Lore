@@ -2,6 +2,16 @@
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
+<p align="center">
+  <img width="100%" alt="Yeomai Lore 产品介绍" src="https://github.com/user-attachments/assets/6e3ba35a-833f-46f2-ad52-19028d3335a1" />
+</p>
+
+<p align="center">
+  <img width="100%" alt="Yeomai Lore 产品介绍" src="https://github.com/user-attachments/assets/e0c2f8f2-e3f3-4ba5-b6a8-5ac5c3fada25" />
+</p>
+
+- 如需使用请访问 Docker Hub 并搜索 `yeomaiyelove/yeomai-lore-web`
+
 这是一个面向 [Epic Games Lore](https://github.com/EpicGames/lore) 的自托管 Web 控制平面。当前原型提供内置账户、组织与仓库 ACL、Lore Tier 2 授权、仓库创建、分支与修订历史、文件浏览、下载、文本差异、邀请、API 令牌和审计记录。
 
 本项目不是 Gitea 兼容实现，目前不提供 Git 或 SSH 远程仓库、Git Actions、拉取请求、Issue 或 Wiki 页面。当前里程碑是 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) 中描述的 0–2 阶段纵向切片。
