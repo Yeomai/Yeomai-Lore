@@ -1,0 +1,6 @@
+* text=auto eol=lf
+*.sh text eol=lf
+Dockerfile text eol=lf
+*.Dockerfile text eol=lf
+scripts/lore text eol=lf
+scripts/loreserver text eol=lf

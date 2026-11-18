@@ -1,0 +1,40 @@
+[environment.endpoint]
+# Public endpoint advertised to Lore clients.
+user_url = "https://localhost:50051"
+
+[server.auth]
+# Must exactly match the portal APP_PUBLIC_URL.
+jwt_issuer = "http://localhost:3000"
+jwt_audience = ["lore-portal"]
+jwt_typ = "at+jwt"
+resource_claim = "resources"
+permission_claim = "permission"
+resource_id_claim = "resource_id"
+resource_id_template = "urc-{id}"
+
+[server.auth.jwk]
+endpoint = "http://localhost:4000/.well-known/jwks.json"
+
+[server.auth.oidc]
+client_id = "lore-cli"
+scopes = ["openid", "offline_access"]
+preferred = true
+# Both values must use the public portal URL in production.
+token_exchange_issuer = "http://localhost:3000"
+resource_template = "http://localhost:3000/lore/repositories/{id}"
+
+[server.http]
+host = "0.0.0.0"
+port = 41339
+
+[server.quic.certificate]
+cert_file = "/certs/grpc.crt"
+pkey_file = "/certs/grpc.key"
+
+[immutable_store.local]
+path = "/data/lore/store"
+flush_delay_seconds = 2
+
+[mutable_store.local]
+path = "/data/lore/store"
+flush_delay_seconds = 2

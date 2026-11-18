@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package epic_urc;
+
+service UrcAuthApi {
+  rpc HealthCheck(HealthCheckRequest) returns (HealthCheckResponse);
+  rpc CheckUserPermission(CheckUserPermissionRequest)
+      returns (CheckUserPermissionResponse);
+  rpc LookupUserPermissions(LookupUserPermissionsRequest)
+      returns (LookupUserPermissionsResponse);
+  rpc GetUserInfo(GetUserInfoRequest) returns (GetUserInfoResponse);
+  rpc GetUserId(GetUserIdRequest) returns (GetUserIdResponse);
+  rpc GetProviderUserId(GetProviderUserIdRequest)
+      returns (GetProviderUserIdResponse);
+}
+
+message HealthCheckRequest {}
+
+message HealthCheckResponse {
+  string status = 1;
+}
+
+message TargetUser {
+  oneof user {
+    string user_token = 1;
+  }
+}
+
+message ResourcePermission {
+  string resource_id = 1;
+  repeated string permission = 2;
+}
+
+message CheckUserPermissionRequest {
+  repeated string resource_id = 1;
+  optional TargetUser target_user = 2;
+}
+
+message CheckUserPermissionResponse {
+  repeated ResourcePermission allowed_resource_permission = 1;
+  repeated ResourcePermission denied_resource_permission = 2;
+}
+
+message LookupUserPermissionsRequest {
+  string resource_filter = 1;
+  optional string context_filter = 2;
+  optional int32 page_size = 3;
+  optional string page_token = 4;
+}
+
+message LookupUserPermissionsResponse {
+  repeated ResourcePermission resource_permission = 1;
+  optional string next_page_token = 2;
+}
+
+message UserInfo {
+  string user_id = 1;
+  string display_name = 2;
+}
+
+message GetUserInfoRequest {
+  string resource_id = 1;
+  repeated string user_id = 2;
+}
+
+message GetUserInfoResponse {
+  repeated UserInfo user_info = 1;
+}
+
+message GetUserIdRequest {
+  string resource_id = 1;
+  string user_display_name = 2;
+}
+
+message GetUserIdResponse {
+  UserInfo user_info = 1;
+}
+
+message GetProviderUserIdRequest {
+  string user_id = 1;
+}
+
+message GetProviderUserIdResponse {
+  string user_id = 1;
+  string provider_user_id = 2;
+}

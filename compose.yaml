@@ -1,0 +1,58 @@
+name: lore-portal
+
+services:
+  certs:
+    image: alpine:3.22
+    command: ["/bin/sh", "/scripts/generate-certs.sh", "/certs"]
+    volumes:
+      - ./infra:/scripts:ro
+      - ./docker-data/certs:/certs
+    restart: "no"
+
+  app:
+    image: yeomai-lore-web:1.1.4
+    build:
+      context: .
+      dockerfile: infra/app.Dockerfile
+    env_file: .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 4000
+      DATABASE_PATH: /data/portal.sqlite
+      APP_PUBLIC_URL: http://localhost:3000
+      API_INTERNAL_URL: http://127.0.0.1:4000
+      LORE_GRPC_URL: localhost:41337
+      LORE_HTTP_URL: http://localhost:41339
+      LORE_PUBLIC_URL: lore://localhost:3000
+      LORE_INTERNAL_URL: lore://localhost:41337
+      LORE_CLI_PATH: /usr/local/bin/lore
+      LORE_IMPORT_WORK_DIR: /data/imports
+      GIT_PATH: git
+      OIDC_KEY_DIR: /data/keys
+      GRPC_HOST: 0.0.0.0
+      GRPC_PORT: 50051
+      GRPC_TLS_CERT_FILE: /certs/grpc.crt
+      GRPC_TLS_KEY_FILE: /certs/grpc.key
+      SSL_CERT_FILE: /certs/ca.crt
+    ports:
+      - "3000:3000/tcp"
+      - "3000:3000/udp"
+    volumes:
+      - ./docker-data/site:/data
+      - ./docker-data/certs:/certs
+    depends_on:
+      certs:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "Promise.all([fetch('http://127.0.0.1:4000/health_check'),fetch('http://127.0.0.1:3000/login'),fetch('http://127.0.0.1:41339/health_check')]).then(rs=>{if(rs.some(r=>!r.ok))process.exit(1)}).catch(()=>process.exit(1))"
+        ]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped

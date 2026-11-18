@@ -3,21 +3,24 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 <p align="center">
-  <img width="100%" alt="Yeomai Lore product overview" src="https://github.com/user-attachments/assets/6e3ba35a-833f-46f2-ad52-19028d3335a1" />
-</p>
-
-<p align="center">
-  <img width="100%" alt="Yeomai Lore product overview" src="https://github.com/user-attachments/assets/e0c2f8f2-e3f3-4ba5-b6a8-5ac5c3fada25" />
+  <img width="180" alt="Yeomai Lore" src="apps/web/public/logo.jpg" />
 </p>
 <p align="center">
-  Update Log:https://my.feishu.cn/wiki/UR1Pw2wJyilbg3krQFjceJZEnyi
+  <img width="100%" alt="Yeomai Lore 产品介绍" src="https://github.com/user-attachments/assets/6e3ba35a-833f-46f2-ad52-19028d3335a1" />
 </p>
-
+<p align="center">
+  <img width="100%" alt="Yeomai Lore 产品介绍" src="https://github.com/user-attachments/assets/e0c2f8f2-e3f3-4ba5-b6a8-5ac5c3fada25" />
+</p>
+<p align="center">
+  Update Log：https://my.feishu.cn/wiki/UR1Pw2wJyilbg3krQFjceJZEnyi
+</p>
 - To use the prebuilt image, search for `yeomaiyelove/yeomai-lore-web` on Docker Hub.
 
 A self-hosted web control plane for [Epic Games Lore](https://github.com/EpicGames/lore). The prototype provides built-in accounts, organization/repository ACLs, Lore Tier 2 authorization, repository creation, branch/revision history, file browsing, downloads, text diffs, invitations, API tokens, and audit records.
 
 This is not a Gitea-compatible implementation. It does not expose Git or SSH remotes, Git Actions, pull requests, issues, or wiki pages yet. The current milestone is the phase 0–2 vertical slice described in [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md).
+
+See [docs/README.md](docs/README.md) for the complete documentation index.
 
 ## Architecture
 
@@ -45,7 +48,8 @@ The web interface supports English and Simplified Chinese. It follows the browse
 
 Prerequisites:
 
-- macOS or Linux with Node.js 22+, pnpm, Git, and OpenSSL.
+- Windows, macOS, or Linux with Node.js 22+, pnpm, Git, and OpenSSL.
+- Windows users need Git for Windows because the development scripts use Git Bash.
 - Ports `3000` TCP/UDP, `41340`, `4000`, `50051`, `41337` TCP/UDP, and `41339` available.
 
 ### Port exposure standard
@@ -94,6 +98,10 @@ pnpm dev:local
 
 Open <http://localhost:3000>.
 
+On Windows, double-click `start.bat` to start the project and `stop.bat` to
+stop it. The scripts check existing project processes, release and reserve the
+required TCP/UDP ports, and verify all health endpoints.
+
 `pnpm dev:local` creates the SQLite schema automatically, downloads the pinned official Lore Server and CLI into `data/local/bin`, generates internal TLS certificates, and runs all application processes natively. No PostgreSQL, Redis, or Docker daemon is involved.
 
 The first visit opens a setup page. It asks for the first administrator
@@ -109,12 +117,14 @@ The default addresses are `http://localhost:3000` for Web management and
 port. Production `lores://` addresses require a matching certificate and private
 key. Logs are under `data/local/logs/`.
 
-The project pins Lore `0.13.0`. Its wrapper downloads release binaries rather than committing platform-specific executables:
+The project pins Lore `0.14.0`. Its wrapper downloads release binaries rather than committing platform-specific executables:
 
 ```bash
 ./scripts/lore --version
 ./scripts/loreserver --version
 ```
+
+`pnpm dev:local` checks both installed binaries against `LORE_VERSION` and automatically downloads the pinned release when either version is missing or stale. Docker deployments synchronize the persisted `/data/config/.env` `LORE_VERSION` value from the image on every container start.
 
 ## Build a first repository
 
@@ -146,8 +156,8 @@ The portal will then show the branch, revision history, file tree, downloadable 
 ### OAuth identity behavior
 
 - One OAuth identity session belongs to one user on one authenticated device. Its Refresh Token is shared by every repository that user can access from that device.
-- If Lore Desktop starts another Device Flow while the same device still has an active OAuth session, the server completes the flow silently and keeps the same OAuth session. Repository creation, opening, sync, and push do not require another approval.
-- A new OAuth identity session starts with a 90-day Refresh Token. A silent same-device recovery adds 30 days only when fewer than 30 days remain on the current Refresh Token.
+- Every Device Flow requires an explicit browser approval. The server never infers device identity from IP address or User-Agent.
+- A new OAuth identity session starts with a 90-day Refresh Token. Access Token renewal uses that Refresh Token and does not start another Device Flow.
 - Ordinary Access Token refreshes rotate the Refresh Token without restoring its full lifetime. A session can never be extended beyond three calendar years after it first started.
 - A new device, a revoked OAuth identity, or an ambiguous device identity requires approval.
 - The device approval status endpoint is read-only and does not require a portal login. Reopening the same approval URL only displays the existing result and never starts another approval.
@@ -159,7 +169,7 @@ The portal will then show the branch, revision history, file tree, downloadable 
 
 - When a repository is created through the portal or its API without an ignore template, the server creates one metadata-only initial revision before returning. The revision records `initialized=true`, while the repository content tree remains empty.
 - When a repository is created directly by Lore Desktop, the portal only registers it. The server intentionally does not add an initial revision or trigger an extra Sync. Desktop remains responsible for creating the first revision.
-- Lore Desktop `0.13.0` can show `No remote configured` when Sync is used before an empty Desktop-created repository has any revision. This is a client-side defect and is intentionally not worked around for Desktop-created repositories.
+- Older Lore Desktop clients such as `0.13.0` could show `No remote configured` when Sync was used before an empty Desktop-created repository had any revision. This is a client-side defect and is intentionally not worked around for Desktop-created repositories.
 
 ## Import an existing Git repository
 
@@ -235,6 +245,8 @@ pnpm --filter @lore-portal/web build
 
 Use `Ctrl-C` in the terminal running `pnpm dev:local` to stop the application processes.
 
+On Windows, use `stop.bat` instead.
+
 ## Docker
 
 After preparing `.env`, build and start the single-node deployment with Compose:
@@ -244,7 +256,13 @@ docker compose build
 docker compose up -d
 ```
 
-Portal Web, API, and Lore Server are packaged in one `yeomai-lore-web` image. The Lore Server binary is extracted directly from the official `ghcr.io/epicgames/lore/loreserver:0.13.0` image during the build. SQLite is intended for the single-node portal; a future multi-node deployment should use a network database instead.
+Portal Web, API, and Lore Server are packaged in one `yeomai-lore-web` image. The Lore Server binary is extracted directly from the official `ghcr.io/epicgames/lore/loreserver:0.14.0` image during the build. SQLite is intended for the single-node portal; a future multi-node deployment should use a network database instead.
+
+The application version and bundled Lore version are declared in
+`apps/web/version.json`. Release synchronization is documented in
+[docs/RELEASING.md](docs/RELEASING.md). The image contains
+`/usr/local/share/yeomai-lore/NOTICE`, and the entrypoint prints the version
+banner plus the full third-party license and trademark notice at startup.
 
 The Portal API is bundled into `apps/server/dist/index.js` at image build time and runs with `node dist/index.js`. The final runtime image does not include `tsx`, esbuild, TypeScript, Vitest, or other development-only packages.
 
@@ -338,7 +356,7 @@ equivalent `docker run -v` arguments.
 
 ## Current boundaries
 
-- Lore is pre-1.0. Pin `0.13.0`; upgrade only after running the protocol and authentication regression suites.
+- Lore is pre-1.0. Pin `0.14.0`; upgrade only after running the protocol and authentication regression suites.
 - The native local profile is single-node and uses local Lore storage. It is not highly available.
 - SMTP is configured under Administration → SMTP email. Its password is encrypted in SQLite. Without SMTP, invite and password-reset links are written to API logs for local testing.
 - `ThinClient.ContentDiff` is not implemented in the pinned server. Portal computes bounded text diffs from Lore blobs in the API; binary and files larger than 2 MiB do not receive text rendering.
@@ -355,8 +373,16 @@ The implementation has been checked with:
 - `pnpm test`
 - `pnpm test:gateway`
 - `pnpm --filter @lore-portal/web build`
-- Official Lore CLI `0.13.0` device login, repository clone, stage, commit, and push
-- Portal branch, revision, tree, blob, and text-diff queries against Lore `0.13.0`
+- Official Lore CLI `0.14.0` device login, repository clone, stage, commit, and push
+- Portal branch, revision, tree, blob, and text-diff queries against Lore `0.14.0`
 - Cross-user ACL check: no access before a grant, read-only repository visibility after a grant
 
 See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for the phased plan and remaining work.
+
+## License
+
+This project is released under the [MIT License](LICENSE).
+
+The protocol files under `apps/server/proto` are derived from
+[EpicGames/lore](https://github.com/EpicGames/lore) and retain their original
+MIT copyright notice. See [NOTICE](NOTICE) for details.

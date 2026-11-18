@@ -1,0 +1,42 @@
+# 与项目 .gitignore 对应的 Lore 忽略规则
+#
+# Lore 自动忽略自身的 .lore 元数据目录；这里显式忽略 Git 元数据，
+# 避免同一工作区同时由 Lore 和 Git 管理时把版本控制内部文件推送到远端。
+
+# Git 元数据
+.git/
+
+# 依赖、构建产物和测试报告
+node_modules/
+.next/
+dist/
+coverage/
+
+# 环境变量
+.env
+.env.local
+
+# 日志、增量构建信息和系统元数据
+*.log
+*.tsbuildinfo
+.DS_Store
+
+# 本地数据库、证书、密钥和运行时数据
+data/
+certs/
+apps/server/keys/
+
+# Docker 持久化目录，仅保留目录占位文件
+docker-data/site/*
+!docker-data/site/.gitkeep
+!docker-data/site/lore/
+docker-data/site/lore/*
+!docker-data/site/lore/.gitkeep
+!docker-data/certs/
+docker-data/certs/*
+!docker-data/certs/.gitkeep
+!docker-data/caddy/data/
+docker-data/caddy/data/*
+!docker-data/caddy/data/.gitkeep
+docker-data/caddy/config/*
+!docker-data/caddy/config/.gitkeep

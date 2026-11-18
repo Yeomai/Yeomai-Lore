@@ -1,0 +1,93 @@
+# Unreal Engine 项目忽略规则
+#
+# 保留：Content/、Config/、Source/、Plugins/*/Source/、
+#       Build 配置、*.uproject、*.uplugin、*.Build.cs、*.Target.cs
+# 忽略：自动生成的构建产物、缓存、日志、编辑器本地状态和 IDE 文件。
+
+# Unreal 自动生成的目录（同时匹配项目和插件目录）
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+DDC/
+
+# 打包和构建系统输出；保留 Build/ 下的平台配置
+Build/Receipts/
+Build/StagedBuilds/
+Build/*.xge/
+
+# 编辑器本地内容
+Content/Developers/
+Content/Collections/
+*_BuiltData.uasset
+
+# IDE 和自动生成的项目文件
+.vs/
+.vsconfig
+.idea/
+.vscode/
+.sln/
+*.sln
+*.slnx
+*.suo
+*.user
+*.VC.db
+*.VC.opendb
+*.opensdf
+*.sdf
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+
+# 编译器、链接器、预编译头和符号文件
+*.obj
+*.o
+*.pch
+*.pchi
+*.ilk
+*.pdb
+*.tlog
+*.lastbuildstate
+*.unsuccessfulbuild
+ipch/
+
+# 日志、崩溃报告和临时文件
+*.log
+*.dmp
+*.stackdump
+*.tmp
+*.temp
+*.bak
+*.swp
+*.autosave
+*~
+
+# macOS 系统元数据和 Finder 索引
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100/
+.Trashes/
+.fseventsd/
+.TemporaryItems/
+.DocumentRevisions-V100/
+.apdisk
+
+# Windows 系统元数据
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+System Volume Information/
+*.lnk
+
+# Linux 桌面元数据
+.directory
+
+# 本地包管理器和工具缓存
+node_modules/
+.cache/
+.clangd/

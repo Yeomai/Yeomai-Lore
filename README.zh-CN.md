@@ -3,23 +3,24 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 <p align="center">
+  <img width="180" alt="Yeomai Lore" src="apps/web/public/logo.jpg" />
+</p>
+<p align="center">
   <img width="100%" alt="Yeomai Lore 产品介绍" src="https://github.com/user-attachments/assets/6e3ba35a-833f-46f2-ad52-19028d3335a1" />
 </p>
-
 <p align="center">
   <img width="100%" alt="Yeomai Lore 产品介绍" src="https://github.com/user-attachments/assets/e0c2f8f2-e3f3-4ba5-b6a8-5ac5c3fada25" />
 </p>
-
 <p align="center">
-  更新日志:https://my.feishu.cn/wiki/UR1Pw2wJyilbg3krQFjceJZEnyi
+  更新日志：https://my.feishu.cn/wiki/UR1Pw2wJyilbg3krQFjceJZEnyi
 </p>
-
-
 - 如需使用请访问 Docker Hub 并搜索 `yeomaiyelove/yeomai-lore-web`
 
 这是一个面向 [Epic Games Lore](https://github.com/EpicGames/lore) 的自托管 Web 控制平面。当前原型提供内置账户、组织与仓库 ACL、Lore Tier 2 授权、仓库创建、分支与修订历史、文件浏览、下载、文本差异、邀请、API 令牌和审计记录。
 
 本项目不是 Gitea 兼容实现，目前不提供 Git 或 SSH 远程仓库、Git Actions、拉取请求、Issue 或 Wiki 页面。当前里程碑是 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) 中描述的 0–2 阶段纵向切片。
+
+完整文档索引请参阅 [docs/README.md](docs/README.md)。
 
 ## 架构
 
@@ -47,8 +48,9 @@ Web 界面支持英文和简体中文。首次访问时根据浏览器的 `Accep
 
 前置条件：
 
-- macOS 或 Linux。
+- Windows、macOS 或 Linux。
 - Node.js 22+、pnpm、Git 和 OpenSSL。
+- Windows 需要安装 Git for Windows，因为开发脚本使用 Git Bash。
 - `3000` TCP/UDP、`41340`、`4000`、`50051`、`41337` TCP/UDP 和 `41339` 端口可用。
 
 ### 端口暴露标准
@@ -94,6 +96,10 @@ pnpm dev:local
 
 打开 <http://localhost:3000>。
 
+Windows 用户可以双击 `start.bat` 启动项目，双击 `stop.bat` 停止项目。
+脚本会在启动前检查残留进程和端口占用，并在停止后确认所有进程退出、TCP/UDP
+端口全部释放。
+
 `pnpm dev:local` 会自动创建 SQLite 表结构，将固定版本的官方 Lore Server 和 CLI 下载到 `data/local/bin`，生成内部 TLS 证书，并以原生进程方式启动全部应用。无需 PostgreSQL、Redis 或 Docker daemon。
 
 首次访问会进入安装向导，用来设置第一个管理员、统一站点地址和初始注册策略。
@@ -105,12 +111,14 @@ pnpm dev:local
 `lore://localhost:3000`。两者共用主机名和端口；生产环境使用 `lores://`
 时需要填写匹配的公钥证书和私钥。日志位于 `data/local/logs/`。
 
-项目固定使用 Lore `0.13.0`。包装脚本会下载发布版可执行文件，而不是将平台相关二进制提交到仓库：
+项目固定使用 Lore `0.14.0`。包装脚本会下载发布版可执行文件，而不是将平台相关二进制提交到仓库：
 
 ```bash
 ./scripts/lore --version
 ./scripts/loreserver --version
 ```
+
+`pnpm dev:local` 会将两个本地二进制与 `LORE_VERSION` 对比，缺失或版本不一致时自动下载固定版本。Docker 部署则会在每次容器启动时，从镜像自动同步持久化 `/data/config/.env` 中的 `LORE_VERSION`。
 
 ## 创建第一个仓库
 
@@ -142,8 +150,8 @@ printf 'hello\n' > README.md
 ### OAuth 身份与审批行为
 
 - 一个 OAuth 身份会话对应一台已认证设备上的一个用户，其 Refresh Token 由该设备访问的所有仓库共用。
-- 如果 Lore Desktop 重复发起 Device Flow，而同一设备仍存在有效 OAuth 会话，服务端会静默完成认证并沿用原 OAuth 会话。建立、打开、同步和推送仓库都不会再次要求审批。
-- 新的 OAuth 身份会话初始 Refresh Token 有效期为 90 天；仅当当前剩余有效期少于 30 天时，同设备静默恢复才在当前过期时间上增加 30 天。
+- 每次新的 Device Flow 都必须由浏览器显式批准。服务端不会根据 IP 或 User-Agent 推断同一设备并自动批准。
+- 新的 OAuth 身份会话初始 Refresh Token 有效期为 90 天；Access Token 续期使用该 Refresh Token，不会重新发起 Device Flow。
 - 普通 Access Token 刷新只轮换 Refresh Token，不会把它恢复为完整有效期。身份会话从首次认证起最多只能延长到 3 年。
 - 新设备、被撤销的 OAuth 身份或无法唯一确定的设备身份仍需要审批。
 - 设备审批状态接口是只读公开接口，不要求网页登录。重复打开同一审批链接只会显示现有结果，不会再次发起审批。
@@ -155,7 +163,7 @@ printf 'hello\n' > README.md
 
 - 通过门户或其 API 创建且未选择忽略模板的仓库，由服务端在返回前自动生成一个仅含 metadata 的首个 revision。该 revision 记录 `initialized=true`，仓库内容树保持为空。
 - 通过 Lore Desktop 直接创建的仓库，门户只负责注册。服务端不会额外生成首个 revision，也不会主动触发 Sync；首次提交仍由 Desktop 完成。
-- 当 Desktop 创建的空仓库尚未产生任何 revision 时，其 Sync 可能显示 `No remote configured`。这是 Lore Desktop `0.13.0` 的客户端缺陷，服务端有意不为 Desktop 创建的仓库增加绕过处理。
+- 较早的 Lore Desktop 客户端（例如 `0.13.0`）在 Desktop 创建的空仓库尚未产生任何 revision 时使用 Sync，可能显示 `No remote configured`。这是客户端缺陷，服务端有意不为 Desktop 创建的仓库增加绕过处理。
 
 ## 导入已有 Git 仓库
 
@@ -206,6 +214,8 @@ pnpm --filter @lore-portal/web build
 
 在运行 `pnpm dev:local` 的终端中按 `Ctrl-C` 可停止全部应用进程。
 
+Windows 请使用 `stop.bat`。
+
 ## Docker
 
 准备 `.env` 后，可以使用 Compose 构建并启动单节点部署：
@@ -215,7 +225,12 @@ docker compose build
 docker compose up -d
 ```
 
-门户 Web、API 和 Lore Server 打包在 `yeomai-lore-web` 单一应用镜像中；Lore Server 二进制在构建时直接从官方 `ghcr.io/epicgames/lore/loreserver:0.13.0` 镜像提取。SQLite 面向单节点门户；未来多节点部署应改用网络数据库。
+门户 Web、API 和 Lore Server 打包在 `yeomai-lore-web` 单一应用镜像中；Lore Server 二进制在构建时直接从官方 `ghcr.io/epicgames/lore/loreserver:0.14.0` 镜像提取。SQLite 面向单节点门户；未来多节点部署应改用网络数据库。
+
+应用版本和内置 Lore 版本统一声明在 `apps/web/version.json`，发布同步流程见
+[docs/RELEASING.md](docs/RELEASING.md)。镜像内包含
+`/usr/local/share/yeomai-lore/NOTICE`，容器每次启动都会打印版本横幅、完整的
+第三方许可和商标声明。
 
 Portal API 会在构建镜像时打包为 `apps/server/dist/index.js`，运行时使用 `node dist/index.js`。最终运行镜像不包含 `tsx`、esbuild、TypeScript、Vitest 等仅用于开发的依赖。
 
@@ -290,7 +305,7 @@ pnpm run run:docker
 
 ## 当前边界
 
-- Lore 尚未达到 1.0。项目固定使用 `0.13.0`；升级前必须运行协议和认证回归测试。
+- Lore 尚未达到 1.0。项目固定使用 `0.14.0`；升级前必须运行协议和认证回归测试。
 - 原生本地配置为单节点模式并使用本地 Lore 存储，不具备高可用能力。
 - 可以在安装引导中配置 SMTP，密码会加密后保存到 SQLite。未配置 SMTP 时，邀请和密码重置链接会写入 API 日志，仅适合本地测试。
 - 固定版本的 Lore Server 尚未实现 `ThinClient.ContentDiff`。门户在 API 中基于 Lore Blob 计算有大小限制的文本差异；二进制文件和大于 2 MiB 的文件不会生成文本差异。
@@ -305,8 +320,16 @@ pnpm run run:docker
 - `pnpm test`
 - `pnpm test:gateway`
 - `pnpm --filter @lore-portal/web build`
-- 官方 Lore CLI `0.13.0` 的设备登录、仓库克隆、暂存、提交和推送
-- 门户针对 Lore `0.13.0` 的分支、修订、文件树、Blob 和文本差异查询
+- 官方 Lore CLI `0.14.0` 的设备登录、仓库克隆、暂存、提交和推送
+- 门户针对 Lore `0.14.0` 的分支、修订、文件树、Blob 和文本差异查询
 - 跨用户 ACL 检查：授权前不可访问，授权后仓库只读可见
 
 分阶段计划和待完成工作请参阅 [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md)。
+
+## 开源许可
+
+本项目采用 [MIT License](LICENSE) 开源。
+
+`apps/server/proto` 下的协议文件来自
+[EpicGames/lore](https://github.com/EpicGames/lore)，保留其原始 MIT
+版权声明。详情请参阅 [NOTICE](NOTICE)。

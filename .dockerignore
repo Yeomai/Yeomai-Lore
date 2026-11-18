@@ -1,0 +1,11 @@
+.git
+.env
+.next
+**/node_modules
+**/.next
+**/data
+**/coverage
+**/*.tsbuildinfo
+docker-data
+*.log
+.DS_Store

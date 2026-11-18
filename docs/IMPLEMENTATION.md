@@ -4,10 +4,10 @@
 
 ### Foundation
 
-- pnpm monorepo with Next.js, Fastify, shared contracts, SQLite, Redis/BullMQ, and a local Lore deployment.
+- pnpm monorepo with Next.js, Fastify, shared contracts, SQLite, and a local Lore deployment.
 - First-run setup page for the initial administrator, Web/Lore addresses, registration policy, and optional Lore TLS certificate.
-- Pinned Lore Server `0.13.0`.
-- Single-file SQLite storage with WAL, Redis, OIDC key, Lore data, and generated internal TLS certificates.
+- Pinned Lore Server `0.14.0`.
+- Single-file SQLite storage with WAL, OIDC key, Lore data, and generated internal TLS certificates.
 - Health endpoint, origin checks on cookie mutations, rate limiting, security headers, and graceful shutdown.
 
 ### Accounts and ACL
@@ -28,7 +28,7 @@
 - Branch listing, revision history, file tree, blob streaming, and bounded text diff.
 - Repository access management UI and audit log.
 - Admin invite/user/audit UI and personal API-token UI.
-- Administrator Git import jobs for allowlisted local repositories and public HTTPS URLs.
+- Git import jobs for supported HTTP(S) and Git URLs, with provider validation for private repositories.
 - Background progress, cancellation, retained warning reports, branch/tag mapping, and failed-import cleanup.
 
 ## Next phases

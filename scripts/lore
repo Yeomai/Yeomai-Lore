@@ -1,0 +1,10 @@
+#!/bin/sh
+set -eu
+
+ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
+BINARY="$ROOT/data/local/bin/lore"
+
+if [ ! -x "$BINARY" ]; then
+  sh "$ROOT/scripts/install-lore.sh"
+fi
+exec node "$ROOT/scripts/lore-cli-wrapper.mjs" "$BINARY" "$@"

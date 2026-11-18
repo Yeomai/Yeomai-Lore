@@ -1,0 +1,32 @@
+{
+  "name": "lore-portal",
+  "version": "1.1.4",
+  "private": true,
+  "license": "MIT",
+  "packageManager": "pnpm@11.23.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --stream -r dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "test:gateway": "node --test scripts/public-gateway.test.mjs",
+    "version:bump": "node scripts/version.mjs bump",
+    "version:set": "node scripts/version.mjs release",
+    "version:sync": "node scripts/version.mjs sync",
+    "version:check": "node scripts/version.mjs check",
+    "version:print": "node scripts/version.mjs print",
+    "db:migrate": "pnpm --filter @lore-portal/server db:migrate",
+    "certs": "sh infra/generate-certs.sh ./data/dev-certs",
+    "install:lore": "sh scripts/install-lore.sh",
+    "dev:local": "sh scripts/start-local.sh",
+    "stop:local": "sh scripts/stop-local.sh",
+    "run:docker": "sh scripts/run-docker.sh"
+  },
+  "bin": {
+    "lore": "./scripts/lore",
+    "loreserver": "./scripts/loreserver"
+  }
+}
