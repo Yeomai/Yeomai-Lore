@@ -10,6 +10,11 @@
   <img width="100%" alt="Yeomai Lore 产品介绍" src="https://github.com/user-attachments/assets/e0c2f8f2-e3f3-4ba5-b6a8-5ac5c3fada25" />
 </p>
 
+<p align="center">
+  更新日志:https://my.feishu.cn/wiki/UR1Pw2wJyilbg3krQFjceJZEnyi
+</p>
+
+
 - 如需使用请访问 Docker Hub 并搜索 `yeomaiyelove/yeomai-lore-web`
 
 这是一个面向 [Epic Games Lore](https://github.com/EpicGames/lore) 的自托管 Web 控制平面。当前原型提供内置账户、组织与仓库 ACL、Lore Tier 2 授权、仓库创建、分支与修订历史、文件浏览、下载、文本差异、邀请、API 令牌和审计记录。

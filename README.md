@@ -9,6 +9,9 @@
 <p align="center">
   <img width="100%" alt="Yeomai Lore product overview" src="https://github.com/user-attachments/assets/e0c2f8f2-e3f3-4ba5-b6a8-5ac5c3fada25" />
 </p>
+<p align="center">
+  Update Log:https://my.feishu.cn/wiki/UR1Pw2wJyilbg3krQFjceJZEnyi
+</p>
 
 - To use the prebuilt image, search for `yeomaiyelove/yeomai-lore-web` on Docker Hub.
 
