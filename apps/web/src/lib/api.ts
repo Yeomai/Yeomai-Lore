@@ -22,6 +22,7 @@ export async function getSetupStatus(): Promise<{
     userRegistrationEnabled: boolean;
     username: string;
     email: string;
+    displayName: string;
     smtp: {
       enabled: boolean;
       host: string;

@@ -72,6 +72,7 @@ export const registerSetupRoutes: FastifyPluginAsync = async (app) => {
             userRegistrationEnabled: false,
             username: "admin",
             email: "admin@example.com",
+            displayName: "Administrator",
           }
         : null,
     };

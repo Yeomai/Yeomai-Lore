@@ -43,7 +43,7 @@ RUN pnpm --filter @lore-portal/server build \
 
 FROM node:24-trixie-slim
 
-ARG PORTAL_VERSION=1.1.4
+ARG PORTAL_VERSION=1.1.5
 ARG LORE_VERSION=0.14.0
 
 RUN apt-get update \

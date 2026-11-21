@@ -47,6 +47,28 @@ const run = promisify(execFile);
 const ZERO_REVISION = "0".repeat(64);
 const EMPTY_GIT_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 
+export function shouldRefreshImportCredential(
+  issuedAt: number,
+  ttlSeconds: number,
+  now = Date.now(),
+): boolean {
+  const refreshAfterMs = Math.max(
+    30_000,
+    Math.min(30 * 60_000, Math.floor((ttlSeconds * 1000) / 2)),
+  );
+  return now - issuedAt >= refreshAfterMs;
+}
+
+export function tarExtractionInvocation(
+  jobDir: string,
+  archive: string,
+): { cwd: string; args: string[] } {
+  return {
+    cwd: jobDir,
+    args: ["-xf", path.basename(archive), "-C", "workspace"],
+  };
+}
+
 interface ImportRow {
   id: string;
   actor_user_id: string;
@@ -142,7 +164,6 @@ export function isMetadataOnlyGitCommit(input: {
   tree: string;
   firstParentTree: string | null;
 }): boolean {
-  if (input.parents.length > 1) return false;
   if (input.parents.length === 0) {
     return input.tree === EMPTY_GIT_TREE;
   }
@@ -208,6 +229,10 @@ export class RepositoryImportService {
   private readonly active = new Map<string, AbortController>();
   private readonly cancelRequested = new Set<string>();
   private readonly credentials = new Map<string, GitCredentials>();
+  private readonly loreCredentialRefreshers = new Map<
+    string,
+    () => Promise<{ identityToken: string; repositoryToken: string }>
+  >();
   private pumping = false;
   private running: Promise<void> | null = null;
 
@@ -520,6 +545,41 @@ export class RepositoryImportService {
     });
   }
 
+  async removeTerminal(
+    actor: SessionUser,
+  ): Promise<{ removedCount: number; failedCount: number }> {
+    const scope =
+      actor.globalRole === "admin" ? "" : "AND actor_user_id = $1";
+    const terminal = await this.db.query<{ id: string }>(
+      `SELECT id
+         FROM repository_imports
+        WHERE status IN ('succeeded', 'failed', 'cancelled')
+          ${scope}
+        ORDER BY requested_at DESC, id`,
+      actor.globalRole === "admin" ? [] : [actor.id],
+    );
+    let removedCount = 0;
+    let failedCount = 0;
+    for (const row of terminal.rows) {
+      try {
+        await this.remove(row.id, actor);
+        removedCount += 1;
+      } catch {
+        failedCount += 1;
+      }
+    }
+    if (terminal.rows.length > 0) {
+      await audit(this.db, {
+        actorUserId: actor.id,
+        action: "repository.import_terminal_cleaned",
+        targetType: "repository_import",
+        targetId: actor.id,
+        metadata: { removedCount, failedCount },
+      });
+    }
+    return { removedCount, failedCount };
+  }
+
   logPath(id: string): string {
     return path.join(this.config.loreImportWorkDir, "logs", `${id}.log`);
   }
@@ -642,6 +702,7 @@ export class RepositoryImportService {
         )
         .finally(() => {
           this.credentials.delete(job.id);
+          this.loreCredentialRefreshers.delete(job.id);
           this.active.delete(job.id);
           this.cancelRequested.delete(job.id);
           this.running = null;
@@ -796,7 +857,8 @@ export class RepositoryImportService {
     job.target_repository_id = pending.id;
     const user = await findUserById(this.db, job.actor_user_id);
     if (!user) throw new Error("Import owner no longer exists");
-    const loginToken = await this.tokens.signLoginToken(user);
+    let loginToken = await this.tokens.signLoginToken(user);
+    let loginTokenIssuedAt = Date.now();
     await this.lore.createRepository({
       id: pending.id,
       defaultBranchId: pending.defaultBranchId,
@@ -806,12 +868,42 @@ export class RepositoryImportService {
       token: loginToken,
     });
     await markRepositoryStatus(this.db, pending.id, "active");
-    const repositoryToken = await issueRepositoryToken(
+    let repositoryToken = await issueRepositoryToken(
       this.db,
       this.tokens,
       user,
       pending,
     );
+    let repositoryTokenIssuedAt = Date.now();
+    this.loreCredentialRefreshers.set(job.id, async () => {
+      const now = Date.now();
+      if (
+        shouldRefreshImportCredential(
+          loginTokenIssuedAt,
+          this.config.accessTokenTtlSeconds,
+          now,
+        )
+      ) {
+        loginToken = await this.tokens.signLoginToken(user);
+        loginTokenIssuedAt = Date.now();
+      }
+      if (
+        shouldRefreshImportCredential(
+          repositoryTokenIssuedAt,
+          this.config.repositoryTokenTtlSeconds,
+          now,
+        )
+      ) {
+        repositoryToken = await issueRepositoryToken(
+          this.db,
+          this.tokens,
+          user,
+          pending,
+        );
+        repositoryTokenIssuedAt = Date.now();
+      }
+      return { identityToken: loginToken, repositoryToken };
+    });
     await this.command(
       job.id,
       this.config.loreCliPath,
@@ -993,9 +1085,12 @@ export class RepositoryImportService {
           firstParentTree: trees[1] ?? null,
         });
         if (metadataOnly) {
+          const mergeWithoutTreeChanges = commit.parents.length > 1;
           await warn(
-            "empty-commit",
-            "A Git commit with no tree changes was imported as a metadata-only Lore revision.",
+            mergeWithoutTreeChanges ? "merge-topology" : "empty-commit",
+            mergeWithoutTreeChanges
+              ? "A Git merge with no tree changes was imported as a single-parent metadata-only Lore revision."
+              : "A Git commit with no tree changes was imported as a metadata-only Lore revision.",
             sha,
           );
         }
@@ -1035,40 +1130,44 @@ export class RepositoryImportService {
         }
 
         const sourceParents: Array<ImportedRevision & { tempBranch: string }> = [];
-        for (const parent of commit.parents.slice(1)) {
-          let mapped = revisions.get(parent);
-          if (!mapped) {
-            const detachedBranch = `git-import-${parent.slice(0, 12)}`;
-            await importBranch(detachedBranch, parent, true);
-            temporaryLoreBranches.add(detachedBranch);
-            mapped = revisions.get(parent);
+        if (!metadataOnly) {
+          for (const parent of commit.parents.slice(1)) {
+            let mapped = revisions.get(parent);
+            if (!mapped) {
+              const detachedBranch = `git-import-${parent.slice(0, 12)}`;
+              await importBranch(detachedBranch, parent, true);
+              temporaryLoreBranches.add(detachedBranch);
+              mapped = revisions.get(parent);
+            }
+            if (!mapped) {
+              throw new Error(`Merge parent ${parent} mapping is missing`);
+            }
+            const tempBranch = `git-import-${parent.slice(0, 12)}`;
+            await this.command(
+              job.id,
+              this.config.loreCliPath,
+              loreBranchSwitchArgs(mapped.branch, mapped.signature),
+              loreCommandOptions(
+                workspace,
+                loginToken,
+                repositoryToken,
+                controller.signal,
+              ),
+            );
+            await this.command(
+              job.id,
+              this.config.loreCliPath,
+              ["branch", "create", tempBranch],
+              loreCommandOptions(
+                workspace,
+                loginToken,
+                repositoryToken,
+                controller.signal,
+              ),
+            ).catch(() => {});
+            temporaryLoreBranches.add(tempBranch);
+            sourceParents.push({ ...mapped, tempBranch });
           }
-          if (!mapped) throw new Error(`Merge parent ${parent} mapping is missing`);
-          const tempBranch = `git-import-${parent.slice(0, 12)}`;
-          await this.command(
-            job.id,
-            this.config.loreCliPath,
-            loreBranchSwitchArgs(mapped.branch, mapped.signature),
-            loreCommandOptions(
-              workspace,
-              loginToken,
-              repositoryToken,
-              controller.signal,
-            ),
-          );
-          await this.command(
-            job.id,
-            this.config.loreCliPath,
-            ["branch", "create", tempBranch],
-            loreCommandOptions(
-              workspace,
-              loginToken,
-              repositoryToken,
-              controller.signal,
-            ),
-          ).catch(() => {});
-          temporaryLoreBranches.add(tempBranch);
-          sourceParents.push({ ...mapped, tempBranch });
         }
 
         if (sourceParents.length > 0) {
@@ -1112,10 +1211,9 @@ export class RepositoryImportService {
             );
             if (index < sourceParents.length - 1) {
               await this.replaceWorkspace(workspace);
-              const archive = path.join(
-                jobDir,
-                `synthetic-${index}.tar`,
-              );
+              const archiveName = `synthetic-${index}.tar`;
+              const archive = path.join(jobDir, archiveName);
+              const extraction = tarExtractionInvocation(jobDir, archive);
               await this.command(
                 job.id,
                 this.config.gitPath,
@@ -1132,8 +1230,8 @@ export class RepositoryImportService {
               await this.command(
                 job.id,
                 "tar",
-                ["-xf", archive, "-C", workspace],
-                { signal: controller.signal },
+                extraction.args,
+                { signal: controller.signal, cwd: extraction.cwd },
               );
               await this.normalizeWorkspace(
                 job.id,
@@ -1613,7 +1711,9 @@ export class RepositoryImportService {
     ) => Promise<void>,
   ): Promise<void> {
     await this.replaceWorkspace(workspace);
-    const archive = path.join(jobDir, `snapshot-${sha.slice(0, 12)}.tar`);
+    const archiveName = `snapshot-${sha.slice(0, 12)}.tar`;
+    const archive = path.join(jobDir, archiveName);
+    const extraction = tarExtractionInvocation(jobDir, archive);
     try {
       await this.command(
         jobId,
@@ -1631,8 +1731,8 @@ export class RepositoryImportService {
       await this.command(
         jobId,
         "tar",
-        ["-xf", archive, "-C", workspace],
-        { signal },
+        extraction.args,
+        { signal, cwd: extraction.cwd },
       );
       await this.normalizeWorkspace(
         jobId,
@@ -1702,10 +1802,9 @@ export class RepositoryImportService {
   ): Promise<void> {
     for (let start = 0; start < changedPaths.length; start += 100) {
       const batch = changedPaths.slice(start, start + 100);
-      const archive = path.join(
-        jobDir,
-        `changed-${start / 100}.tar`,
-      );
+      const archiveName = `changed-${start / 100}.tar`;
+      const archive = path.join(jobDir, archiveName);
+      const extraction = tarExtractionInvocation(jobDir, archive);
       try {
         await this.command(
           jobId,
@@ -1725,8 +1824,8 @@ export class RepositoryImportService {
         await this.command(
           jobId,
           "tar",
-          ["-xf", archive, "-C", workspace],
-          { signal },
+          extraction.args,
+          { signal, cwd: extraction.cwd },
         );
       } finally {
         await removePathWithRetry(archive);
@@ -2370,9 +2469,20 @@ export class RepositoryImportService {
   ): Promise<{ stdout: string; stderr: string }> {
     throwIfAborted(options.signal);
     try {
+      const commandEnv = options.env ?? process.env;
+      const refresher = this.loreCredentialRefreshers.get(jobId);
+      const env =
+        refresher &&
+        (commandEnv.LORE_IDENTITY_TOKEN || commandEnv.LORE_ACCESS_TOKEN)
+          ? await refresher().then((credentials) => ({
+              ...commandEnv,
+              LORE_IDENTITY_TOKEN: credentials.identityToken,
+              LORE_ACCESS_TOKEN: credentials.repositoryToken,
+            }))
+          : commandEnv;
       const result = await run(command, args, {
         cwd: options.cwd,
-        env: options.env ?? process.env,
+        env,
         signal: options.signal,
         timeout: 30 * 60_000,
         maxBuffer: 64 * 1024 * 1024,

@@ -31,6 +31,7 @@ describe("repository import routes", () => {
       const browserSession = await session.create(userId);
       const listedFor: string[] = [];
       const createdFor: string[] = [];
+      const terminalCleanedFor: string[] = [];
       app = await buildApp({
         config,
         db,
@@ -73,6 +74,10 @@ describe("repository import routes", () => {
               finishedAt: null,
             };
           },
+          removeTerminal: async (actor: SessionUser) => {
+            terminalCleanedFor.push(actor.id);
+            return { removedCount: 2, failedCount: 0 };
+          },
         },
         logger: false,
       } as never);
@@ -107,6 +112,15 @@ describe("repository import routes", () => {
       });
       expect(created.statusCode).toBe(202);
       expect(createdFor).toEqual([userId]);
+
+      const cleaned = await app.inject({
+        method: "DELETE",
+        url: "/api/v1/repository-imports/terminal",
+        headers,
+      });
+      expect(cleaned.statusCode).toBe(200);
+      expect(cleaned.json()).toEqual({ removedCount: 2, failedCount: 0 });
+      expect(terminalCleanedFor).toEqual([userId]);
     } finally {
       await app?.close();
       await db.end();

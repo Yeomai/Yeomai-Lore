@@ -53,7 +53,11 @@ export function RepositoryImportPanel({
   const form = messages.repositoryForm;
   const [pending, setPending] = useState("");
   const [error, setError] = useState("");
+  const [listError, setListError] = useState("");
   const [httpsAuth, setHttpsAuth] = useState<"none" | "token">("none");
+  const terminalCount = imports.filter(
+    (job) => job.status !== "queued" && job.status !== "running",
+  ).length;
 
   useEffect(() => {
     if (!imports.some((job) => job.status === "queued" || job.status === "running")) {
@@ -100,14 +104,14 @@ export function RepositoryImportPanel({
 
   async function cancel(id: string) {
     setPending(id);
-    setError("");
+    setListError("");
     try {
       await clientApi(`/api/v1/repository-imports/${id}/cancel`, {
         method: "POST",
       });
       router.refresh();
     } catch (cause) {
-      setError(localizeApiError(cause, messages));
+      setListError(localizeApiError(cause, messages));
     } finally {
       setPending("");
     }
@@ -116,14 +120,42 @@ export function RepositoryImportPanel({
   async function clean(id: string) {
     if (!window.confirm(m.confirmCleanImport)) return;
     setPending(id);
-    setError("");
+    setListError("");
     try {
       await clientApi(`/api/v1/repository-imports/${id}`, {
         method: "DELETE",
       });
       router.refresh();
     } catch (cause) {
-      setError(localizeApiError(cause, messages));
+      setListError(localizeApiError(cause, messages));
+    } finally {
+      setPending("");
+    }
+  }
+
+  async function cleanTerminal() {
+    if (terminalCount === 0) return;
+    if (!window.confirm(m.confirmCleanAllImports)) return;
+    setPending("clean-terminal");
+    setListError("");
+    try {
+      const result = await clientApi<{
+        removedCount: number;
+        failedCount: number;
+      }>("/api/v1/repository-imports/terminal", {
+        method: "DELETE",
+      });
+      if (result.failedCount > 0) {
+        setListError(
+          formatMessage(m.cleanAllImportsPartial, {
+            removed: String(result.removedCount),
+            failed: String(result.failedCount),
+          }),
+        );
+      }
+      router.refresh();
+    } catch (cause) {
+      setListError(localizeApiError(cause, messages));
     } finally {
       setPending("");
     }
@@ -221,8 +253,21 @@ export function RepositoryImportPanel({
       <section className="panel">
         <div className="section-heading">
           <h2>{m.importJobs}</h2>
-          <span className="count">{imports.length}</span>
+          <div className="import-jobs-heading-actions">
+            <button
+              className="button small danger"
+              type="button"
+              disabled={terminalCount === 0 || pending === "clean-terminal"}
+              onClick={() => void cleanTerminal()}
+            >
+              {pending === "clean-terminal"
+                ? m.cleaningAllImports
+                : m.cleanAllImports}
+            </button>
+            <span className="count">{imports.length}</span>
+          </div>
         </div>
+        {listError ? <p className="form-error">{listError}</p> : null}
         {imports.length === 0 ? (
           <p className="muted">{m.noImportJobs}</p>
         ) : (

@@ -15,6 +15,8 @@ import {
   loreCommandEnvironment,
   parseGitNameStatus,
   RepositoryImportService,
+  shouldRefreshImportCredential,
+  tarExtractionInvocation,
 } from "../src/imports/service.ts";
 
 describe("Git import support", () => {
@@ -29,7 +31,7 @@ describe("Git import support", () => {
     expect(isPrivateAddress("2606:4700:4700::1111")).toBe(false);
   });
 
-  it("identifies empty root and single-parent commits without treating merges as empty", () => {
+  it("identifies metadata-only commits, including merges without tree changes", () => {
     const emptyTree = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
     const populatedTree = "a".repeat(40);
 
@@ -59,6 +61,13 @@ describe("Git import support", () => {
         parents: ["parent", "merged-parent"],
         tree: populatedTree,
         firstParentTree: populatedTree,
+      }),
+    ).toBe(true);
+    expect(
+      isMetadataOnlyGitCommit({
+        parents: ["parent", "merged-parent"],
+        tree: populatedTree,
+        firstParentTree: "b".repeat(40),
       }),
     ).toBe(false);
   });
@@ -109,6 +118,35 @@ describe("Git import support", () => {
       "--force",
       "--reset",
     ]);
+  });
+
+  it("extracts Git archives with paths relative to the job directory", () => {
+    const jobDir = path.join(tmpdir(), "lore-import-job");
+    const archive = path.join(jobDir, "snapshot-b67e81ac9764.tar");
+
+    expect(
+      tarExtractionInvocation(jobDir, archive),
+    ).toEqual({
+      cwd: jobDir,
+      args: ["-xf", "snapshot-b67e81ac9764.tar", "-C", "workspace"],
+    });
+  });
+
+  it("refreshes long-running import credentials before they expire", () => {
+    const issuedAt = 1_000;
+
+    expect(
+      shouldRefreshImportCredential(issuedAt, 600, issuedAt + 299_000),
+    ).toBe(false);
+    expect(
+      shouldRefreshImportCredential(issuedAt, 600, issuedAt + 300_000),
+    ).toBe(true);
+    expect(
+      shouldRefreshImportCredential(issuedAt, 86_400, issuedAt + 1_799_000),
+    ).toBe(false);
+    expect(
+      shouldRefreshImportCredential(issuedAt, 86_400, issuedAt + 1_800_000),
+    ).toBe(true);
   });
 
   it("creates the durable import job tables", async () => {
@@ -414,6 +452,14 @@ describe("Git import support", () => {
       expect(firstCancel.status).toBe("cancelled");
       expect(repeatedCancel.status).toBe("cancelled");
       expect((await service.get(earlierId))?.status).toBe("cancelled");
+      expect((await service.get(otherJobId))?.status).toBe("running");
+
+      await expect(service.removeTerminal(member!)).resolves.toEqual({
+        removedCount: 1,
+        failedCount: 0,
+      });
+      expect(await service.get(earlierId)).toBeNull();
+      expect((await service.get(laterId))?.status).toBe("queued");
       expect((await service.get(otherJobId))?.status).toBe("running");
     } finally {
       await db.end();

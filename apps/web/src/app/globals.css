@@ -1082,6 +1082,17 @@ h3 {
 .import-job-list {
   display: grid;
   gap: 14px;
+  max-height: min(68vh, 760px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 6px;
+  scrollbar-gutter: stable;
+}
+
+.import-jobs-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .checkbox-label {

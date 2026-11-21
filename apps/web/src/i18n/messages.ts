@@ -437,8 +437,14 @@ const en = {
     stoppingImport: "Stopping…",
     cleanImport: "Clean record",
     cleaningImport: "Cleaning…",
+    cleanAllImports: "Clean all finished",
+    cleaningAllImports: "Cleaning all…",
     confirmCleanImport:
       "Remove this import record, its warnings, and its logs? The imported repository is kept for successful jobs.",
+    confirmCleanAllImports:
+      "Remove every finished import record, its warnings, and its logs? Queued and running imports are kept. Repositories from successful imports are kept.",
+    cleanAllImportsPartial:
+      "Cleaned {removed} records; {failed} could not be cleaned.",
     importStopped: "Import stopped.",
     importReport: "Report",
     importStatus: {
@@ -794,7 +800,7 @@ const zhCN: Messages = {
     autoAddressHint: "用于提供Lore服务的地址",
     addressesMustDiffer: "Lore 客户端地址不能与 Web 管理地址相同。",
     certificateDescription:
-      "请上传域名覆盖当前 Lore 地址的公钥证书；证书颁发方提供中间证书时，请一并包含。",
+      "请提前为该 HTTPS 域名申请 TLS 证书。服务器证书必须包含当前站点的域名 SAN；如签发方提供中间证书，请按服务器证书在前、中间证书在后的顺序合并为同一证书文件并上传，并确保私钥与证书匹配。",
     certificateChain: "公钥证书链（PEM）",
     privateKey: "私钥（PEM）",
     chooseCertificateFile: "选择公钥证书",
@@ -1155,8 +1161,14 @@ const zhCN: Messages = {
     stoppingImport: "正在停止…",
     cleanImport: "清理记录",
     cleaningImport: "正在清理…",
+    cleanAllImports: "全部清理",
+    cleaningAllImports: "正在全部清理…",
     confirmCleanImport:
       "确定删除该导入任务的记录、警告和日志吗？成功任务的仓库会保留。",
+    confirmCleanAllImports:
+      "确定清理所有已完成、失败和已取消的导入任务吗？排队中和进行中的任务会保留，成功任务的仓库也会保留。",
+    cleanAllImportsPartial:
+      "已清理 {removed} 条记录，{failed} 条清理失败。",
     importStopped: "导入已停止。",
     importReport: "报告",
     importStatus: {

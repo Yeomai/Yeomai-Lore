@@ -8,8 +8,21 @@ REPO="${LORE_REPO:-EpicGames/lore}"
 BINARIES="${LORE_INSTALL_BINARIES:-lore loreserver}"
 
 case "$(uname -s)" in
-  Darwin) os=apple-darwin ;;
-  Linux) os=unknown-linux-gnu ;;
+  Darwin)
+    os=apple-darwin
+    exe_suffix=""
+    archive_ext="tar.gz"
+    ;;
+  Linux)
+    os=unknown-linux-gnu
+    exe_suffix=""
+    archive_ext="tar.gz"
+    ;;
+  MINGW*|MSYS*|CYGWIN*)
+    os=pc-windows-msvc
+    exe_suffix=".exe"
+    archive_ext="zip"
+    ;;
   *) echo "Unsupported operating system: $(uname -s)" >&2; exit 1 ;;
 esac
 
@@ -39,7 +52,7 @@ asset_url() {
     const [file, binary, triple] = process.argv.slice(1);
     const release = JSON.parse(fs.readFileSync(file, "utf8"));
     const pattern = new RegExp(
-      "^" + binary + "-v?[0-9][^\\\"]*-" + triple + "\\.tar\\.gz$"
+      "^" + binary + "-v?[0-9][^\\\"]*-" + triple + "\\.(?:tar\\.gz|zip)$"
     );
     const asset = release.assets.find((item) => pattern.test(item.name));
     if (!asset) process.exit(2);
@@ -49,7 +62,7 @@ asset_url() {
 
 install_binary() {
   binary="$1"
-  installed="$INSTALL_DIR/$binary"
+  installed="$INSTALL_DIR/$binary$exe_suffix"
   if [ -x "$installed" ] &&
      "$installed" --version 2>/dev/null | grep -q "$VERSION"; then
     echo "$binary $VERSION already installed"
@@ -57,7 +70,7 @@ install_binary() {
   fi
 
   url="$(asset_url "$binary")"
-  archive="$work/$binary.tar.gz"
+  archive="$work/$binary.$archive_ext"
   extract="$work/$binary"
   mkdir -p "$extract"
   echo "Downloading $binary $VERSION for $triple"
@@ -67,8 +80,12 @@ install_binary() {
     --retry-all-errors \
     --connect-timeout 15 \
     "$url" -o "$archive"
-  tar -xzf "$archive" -C "$extract"
-  source_binary="$(find "$extract" -type f -name "$binary" | head -n 1)"
+  if [ "$archive_ext" = "zip" ]; then
+    unzip -q "$archive" -d "$extract"
+  else
+    tar -xzf "$archive" -C "$extract"
+  fi
+  source_binary="$(find "$extract" -type f -name "$binary$exe_suffix" | head -n 1)"
   if [ -z "$source_binary" ]; then
     echo "Archive does not contain $binary" >&2
     exit 1

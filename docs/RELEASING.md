@@ -5,7 +5,7 @@ The application and bundled Lore versions are declared in
 
 ```json
 {
-  "version": "1.1.4",
+  "version": "1.1.5",
   "loreVersion": "0.14.0",
   "internalBuild": 18,
   "builtAt": "2026-11-18 13:09"

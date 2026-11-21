@@ -44,6 +44,9 @@ fallback.
   root commits, are imported as metadata-only Lore revisions. The original SHA,
   author, timestamps, message, and branch position are retained, and an
   `empty-commit` warning is recorded.
+- A merge whose final tree is identical to its first parent's tree has no
+  material changes to commit. It is imported as a single-parent metadata-only
+  revision and records a `merge-topology` warning.
 - The portal returns Git committer time for imported revisions even though Lore
   0.13.0's filesystem commit path stamps its own revision time.
 - Lightweight and annotated tags are optional. When “Import Git tags” is
@@ -76,6 +79,9 @@ in SQLite. Each regular user can have at most one queued or running import at a
 time and must wait for it to finish before submitting another. Administrators
 have no queue-count limit. Regular users can inspect, cancel, or clean only
 their own jobs. Administrators can inspect and manage all jobs.
+
+Import credentials are refreshed before their configured lifetime elapses so
+large repositories can run longer than the normal repository-token TTL.
 
 Jobs are not resumable. Cancellation, failure, or an API restart marks the job
 failed or cancelled and removes the incomplete Lore repository. Job records,

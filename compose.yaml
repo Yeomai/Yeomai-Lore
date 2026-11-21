@@ -10,7 +10,7 @@ services:
     restart: "no"
 
   app:
-    image: yeomai-lore-web:1.1.4
+    image: yeomai-lore-web:1.1.5
     build:
       context: .
       dockerfile: infra/app.Dockerfile

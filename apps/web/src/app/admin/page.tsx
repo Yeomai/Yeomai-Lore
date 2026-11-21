@@ -423,6 +423,11 @@ function AdminSidebar({
               { id: "users" as const, label: m.users },
             ]
           : []),
+        ...(isAdmin
+          ? [
+              { id: "organizations" as const, label: m.organizations },
+            ]
+          : []),
         ...(canInvite
           ? [{ id: "invitations" as const, label: m.invitations }]
           : []),
@@ -432,13 +437,14 @@ function AdminSidebar({
     {
       title: m.resourcesGroup,
       items: [
-        ...(isAdmin
-          ? [
-              { id: "organizations" as const, label: m.organizations },
-            ]
-          : []),
         { id: "repositories" as const, label: m.repositories },
         { id: "imports" as const, label: m.imports },
+        ...(isAdmin
+          ? [
+              { id: "certificate" as const, label: m.certificate },
+              { id: "smtp" as const, label: m.smtp },
+            ]
+          : []),
       ],
     },
     ...(isAdmin
@@ -447,8 +453,6 @@ function AdminSidebar({
             title: m.systemGroup,
             items: [
               { id: "settings" as const, label: m.settings },
-              { id: "certificate" as const, label: m.certificate },
-              { id: "smtp" as const, label: m.smtp },
               { id: "audit" as const, label: m.audit },
               { id: "systemInfo" as const, label: m.systemInfo },
             ],

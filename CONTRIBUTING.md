@@ -23,6 +23,22 @@ pnpm dev:local
 On Windows, run `start.bat` and `stop.bat` instead of invoking the shell
 scripts directly.
 
+## Cross-platform path compatibility
+
+This project is intended to install and run on Windows, Linux, macOS, and in
+Docker. Code and scripts must treat filesystem paths as platform-specific:
+
+- Build filesystem paths with `node:path` or the native shell APIs; use POSIX
+  paths only for URL and protocol path segments.
+- Do not assume `/`, drive letters, home-directory locations, temporary
+  directories, path case, or path separators.
+- When invoking external tools, prefer a native working directory plus relative
+  file names over passing absolute paths as command arguments. In particular,
+  Windows drive-letter paths such as `C:\...` can be misread as remote host
+  specifications by GNU-compatible tools.
+- Add regression coverage for path handling when changing import, archive,
+  backup, certificate, or file-processing code.
+
 ## Before submitting a change
 
 Run the relevant checks from the repository root:

@@ -23,6 +23,10 @@ const idParamsSchema = z.object({ id: z.string().uuid() });
 export const registerImportRoutes: FastifyPluginAsync = async (app) => {
   if (!app.services.imports) {
     app.get("/", async () => ({ imports: [] }));
+    app.delete("/terminal", async () => ({
+      removedCount: 0,
+      failedCount: 0,
+    }));
     app.post("/", async () => {
       throw badRequest("Repository imports are not enabled");
     });
@@ -70,6 +74,11 @@ export const registerImportRoutes: FastifyPluginAsync = async (app) => {
     const user = await requireSessionUser(request);
     const { id } = parseInput(idParamsSchema, request.params);
     return { job: await imports.cancel(id, user) };
+  });
+
+  app.delete("/terminal", async (request) => {
+    const user = await requireSessionUser(request);
+    return imports.removeTerminal(user);
   });
 
   app.delete("/:id", async (request) => {

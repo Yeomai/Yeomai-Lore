@@ -58,6 +58,7 @@ describe("first-run setup", () => {
           userRegistrationEnabled: false,
           username: "admin",
           email: "admin@example.com",
+          displayName: "Administrator",
         },
       });
       expect(initial.json().defaults).not.toHaveProperty("smtp");

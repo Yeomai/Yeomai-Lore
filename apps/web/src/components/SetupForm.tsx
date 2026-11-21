@@ -18,6 +18,7 @@ interface SetupDefaults {
   userRegistrationEnabled: boolean;
   username: string;
   email: string;
+  displayName: string;
 }
 
 export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
@@ -218,7 +219,12 @@ export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
         </label>
         <label>
           {m.displayName}
-          <input name="displayName" maxLength={80} autoComplete="name" />
+          <input
+            name="displayName"
+            defaultValue={defaults.displayName}
+            maxLength={80}
+            autoComplete="name"
+          />
         </label>
         <label>
           {m.password}
@@ -282,7 +288,7 @@ export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
             defaultChecked={defaults.userRegistrationEnabled}
           />
           <span>
-            <strong>{m.allowRegistration}</strong>
+            <strong>{m.allowRegistration}{" "}</strong>
             <span className="field-hint">{m.registrationHint}</span>
           </span>
         </label>

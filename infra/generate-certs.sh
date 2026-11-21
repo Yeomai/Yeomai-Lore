@@ -22,15 +22,24 @@ if ! command -v openssl >/dev/null 2>&1; then
   fi
 fi
 
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*)
+    subject_prefix="//CN"
+    ;;
+  *)
+    subject_prefix="/CN"
+    ;;
+esac
+
 openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 365 \
   -keyout "$cert_dir/ca.key" \
   -out "$cert_dir/ca.crt" \
-  -subj "/CN=Yeomai Lore Dev CA"
+  -subj "$subject_prefix=Yeomai Lore Dev CA"
 
 openssl req -newkey rsa:2048 -nodes -sha256 \
   -keyout "$cert_dir/grpc.key" \
   -out "$cert_dir/grpc.csr" \
-  -subj "/CN=host.docker.internal"
+  -subj "$subject_prefix=host.docker.internal"
 
 cat > "$cert_dir/grpc.ext" <<'EOF'
 basicConstraints=CA:FALSE
