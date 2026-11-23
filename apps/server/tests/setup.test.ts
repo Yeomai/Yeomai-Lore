@@ -1,5 +1,11 @@
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -15,6 +21,7 @@ import {
   normalizeLorePublicUrl,
   normalizeUnifiedSiteAddress,
   validateLoreCertificate,
+  writeLoreRuntimeConfig,
 } from "../src/setup.ts";
 
 describe("first-run setup", () => {
@@ -166,6 +173,62 @@ describe("first-run setup", () => {
     } finally {
       await app?.close();
       await db.end();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("adds GC settings when rewriting a reused runtime config", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "lore-gc-config-test-"));
+    const config = loadConfig({
+      NODE_ENV: "test",
+      APP_PUBLIC_URL: "http://localhost:3000",
+      API_INTERNAL_URL: "http://localhost:4000",
+      OIDC_KEY_DIR: path.join(directory, "keys"),
+      LORE_RUNTIME_CONFIG_PATH: path.join(directory, "config", "local.toml"),
+      LORE_STORAGE_PATH: path.join(directory, "lore"),
+    });
+    try {
+      mkdirSync(path.dirname(config.loreRuntimeConfigPath), {
+        recursive: true,
+      });
+      writeFileSync(
+        config.loreRuntimeConfigPath,
+        `[immutable_store.local]
+path = ${JSON.stringify(config.loreStoragePath)}
+flush_delay_seconds = 2
+`,
+      );
+
+      await writeLoreRuntimeConfig(config, {
+        siteName: "Yeomai Lore",
+        webPublicUrl: config.publicUrl,
+        lorePublicUrl: config.lorePublicUrl,
+      });
+
+      const runtimeConfig = readFileSync(config.loreRuntimeConfigPath, "utf8");
+      expect(runtimeConfig).toContain("max_size = 80530636800");
+      expect(runtimeConfig).toContain("compaction_delay = 172800000");
+
+      writeFileSync(
+        config.loreRuntimeConfigPath,
+        `[immutable_store.local]
+max_size = 68719476736
+compaction_delay = 86400000
+`,
+      );
+      await writeLoreRuntimeConfig(config, {
+        siteName: "Yeomai Lore",
+        webPublicUrl: config.publicUrl,
+        lorePublicUrl: config.lorePublicUrl,
+      });
+
+      const customRuntimeConfig = readFileSync(
+        config.loreRuntimeConfigPath,
+        "utf8",
+      );
+      expect(customRuntimeConfig).toContain("max_size = 68719476736");
+      expect(customRuntimeConfig).toContain("compaction_delay = 86400000");
+    } finally {
       rmSync(directory, { recursive: true, force: true });
     }
   });

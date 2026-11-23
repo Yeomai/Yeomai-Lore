@@ -16,6 +16,7 @@ export const COMMIT_LANE_COLORS = [
 
 export interface CommitGraphRow extends RevisionSummary {
   lane: number;
+  activeLaneCount: number;
   parentLanes: Array<{ signature: string; lane: number }>;
   color: string;
 }
@@ -85,7 +86,11 @@ export function buildCommitGraph(
     );
   }
   const expected: Array<string | null> = [];
-  const positioned: Array<{ revision: RevisionSummary; lane: number }> = [];
+  const positioned: Array<{
+    revision: RevisionSummary;
+    lane: number;
+    activeLaneCount: number;
+  }> = [];
 
   for (const revision of ordered) {
     let lane = expected.findIndex(
@@ -128,15 +133,21 @@ export function buildCommitGraph(
         expected[parentLane] = parent;
       }
     }
-    positioned.push({ revision, lane });
+    const activeLaneCount = expected.reduce(
+      (count, signature, index) =>
+        signature === null ? count : Math.max(count, index + 1),
+      lane + 1,
+    );
+    positioned.push({ revision, lane, activeLaneCount });
   }
 
   const laneBySignature = new Map(
     positioned.map(({ revision, lane }) => [revision.signature, lane]),
   );
-  return positioned.map(({ revision, lane }) => ({
+  return positioned.map(({ revision, lane, activeLaneCount }) => ({
     ...revision,
     lane,
+    activeLaneCount,
     parentLanes: revision.parents.flatMap((signature) => {
       const parentLane = laneBySignature.get(signature);
       return parentLane === undefined ? [] : [{ signature, lane: parentLane }];

@@ -38,6 +38,10 @@ import {
   initializeIgnoreTemplate,
 } from "../lore/template-initializer.ts";
 import type { LoreClient } from "../lore/types.ts";
+import {
+  buildRepositoryFileIndex,
+  RepositoryFileIndexCache,
+} from "../repository-file-index.ts";
 
 const createRepositorySchema = z.object({
   organizationId: z.string().uuid().optional(),
@@ -64,6 +68,10 @@ const treeQuerySchema = branchQuerySchema.extend({
   path: z.string().max(4096).default(""),
   depth: z.coerce.number().int().nonnegative().max(32).optional(),
   lastRevision: z.enum(["true", "false"]).optional(),
+});
+
+const fileIndexQuerySchema = z.object({
+  branch: z.string().max(200).optional(),
 });
 
 const blobQuerySchema = treeQuerySchema.extend({
@@ -105,6 +113,7 @@ const revokeGrantSchema = z.object({
 
 export const registerRepositoryRoutes: FastifyPluginAsync = async (app) => {
   const { config, db, lore, tokens } = app.services;
+  const fileIndexCache = new RepositoryFileIndexCache();
   const initializeTemplate =
     app.services.templateInitializer ?? initializeIgnoreTemplate;
   const initializeEmpty =
@@ -388,6 +397,49 @@ export const registerRepositoryRoutes: FastifyPluginAsync = async (app) => {
         : [],
     };
   });
+
+  app.get(
+    "/:organizationSlug/:repositorySlug/file-index",
+    async (request) => {
+      const user = await requireSessionUser(request);
+      const params = parseInput(repoParamsSchema, request.params);
+      const query = parseInput(fileIndexQuerySchema, request.query);
+      const { repository } = await requireRepositoryAccess(
+        db,
+        user,
+        params.organizationSlug,
+        params.repositorySlug,
+        "read",
+      );
+      if (repository.status !== "active") {
+        return { revision: null, entries: [], truncated: false };
+      }
+
+      const token = await issueRepositoryToken(db, tokens, user, repository);
+      const branches = await lore.listBranches(repository.id, token);
+      const branch = branches.find(
+        (candidate) =>
+          candidate.id === (query.branch ?? repository.defaultBranchName) ||
+          candidate.name === (query.branch ?? repository.defaultBranchName),
+      );
+      if (!branch) {
+        return { revision: null, entries: [], truncated: false };
+      }
+
+      const cacheKey = `${repository.id}:${branch.id}:${branch.latest}`;
+      const cached = fileIndexCache.get(cacheKey);
+      if (cached) return cached;
+
+      const index = await buildRepositoryFileIndex(lore, {
+        repositoryId: repository.id,
+        branchId: branch.id,
+        revision: branch.latest,
+        token,
+      });
+      fileIndexCache.set(cacheKey, index);
+      return index;
+    },
+  );
 
   app.get("/:organizationSlug/:repositorySlug/revisions", async (request) => {
     const user = await requireSessionUser(request);
@@ -931,7 +983,7 @@ type AppDependenciesLore = {
   listBranches(
     repositoryId: string,
     token: string,
-  ): Promise<Array<{ id: string; name: string }>>;
+  ): Promise<Array<{ id: string; name: string; latest: string }>>;
   listRevisions(
     repositoryId: string,
     branchId: string,
@@ -940,7 +992,9 @@ type AppDependenciesLore = {
   getRevisionTree(input: {
     repositoryId: string;
     branchId: string;
+    path?: string;
     maxDepth?: number;
+    includeLastRevision?: boolean;
     token: string;
   }): Promise<
     Array<{

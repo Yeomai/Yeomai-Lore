@@ -4,7 +4,7 @@
 > 代码基线：当前 `main` 分支统一入口实现
 > Lore 版本：`0.14.0`
 
-`yeomai-lore-web:1.1.4` 只是本地标签，不能保证与当前源码一致。部署前必须重新构建镜像，并记录镜像 ID、构建时间和 SHA-256。
+`yeomai-lore-web:1.1.6` 只是本地标签，不能保证与当前源码一致。部署前必须重新构建镜像，并记录镜像 ID、构建时间和 SHA-256。
 
 ## 1. 端口
 
@@ -360,7 +360,7 @@ docker run -d \
   -p 443:3000/udp \
   -v /path/to/data:/data \
   -v /path/to/certs:/certs \
-  yeomai-lore-web:1.1.4
+  yeomai-lore-web:1.1.6
 ```
 
 其中：
@@ -468,13 +468,13 @@ nginx -s reload
 在飞牛宿主机执行：
 
 ```bash
-docker load -i yeomai-lore-web-1.1.4-linux-amd64.tar.gz
+docker load -i yeomai-lore-web-1.1.6-linux-amd64.tar.gz
 ```
 
 确认镜像：
 
 ```bash
-docker image inspect yeomai-lore-web:1.1.4 \
+docker image inspect yeomai-lore-web:1.1.6 \
   --format '{{.Id}} {{.Architecture}}'
 ```
 
@@ -500,7 +500,7 @@ docker image inspect yeomai-lore-web:1.1.4 \
 
 ```text
 容器名：yeomai-lore-web
-镜像：yeomai-lore-web:1.1.4
+镜像：yeomai-lore-web:1.1.6
 重启策略：unless-stopped
 端口：
   127.0.0.1:3000:3000/tcp
@@ -832,14 +832,14 @@ docker build \
   --platform linux/amd64 \
   --pull \
   -f infra/app.Dockerfile \
-  -t yeomai-lore-web:1.1.4 \
+  -t yeomai-lore-web:1.1.6 \
   .
 ```
 
 构建后记录准确身份：
 
 ```bash
-docker image inspect yeomai-lore-web:1.1.4 \
+docker image inspect yeomai-lore-web:1.1.6 \
   --format '{{.Id}} {{.Created}} {{.Architecture}}'
 ```
 
@@ -847,20 +847,20 @@ docker image inspect yeomai-lore-web:1.1.4 \
 
 ```bash
 docker save \
-  -o dist/yeomai-lore-web-1.1.4-linux-amd64.tar \
-  yeomai-lore-web:1.1.4
+  -o dist/yeomai-lore-web-1.1.6-linux-amd64.tar \
+  yeomai-lore-web:1.1.6
 
-gzip -f dist/yeomai-lore-web-1.1.4-linux-amd64.tar
+gzip -f dist/yeomai-lore-web-1.1.6-linux-amd64.tar
 
 shasum -a 256 \
-  dist/yeomai-lore-web-1.1.4-linux-amd64.tar.gz \
-  > dist/yeomai-lore-web-1.1.4-linux-amd64.tar.gz.sha256
+  dist/yeomai-lore-web-1.1.6-linux-amd64.tar.gz \
+  > dist/yeomai-lore-web-1.1.6-linux-amd64.tar.gz.sha256
 ```
 
 ### 13.3 飞牛更新
 
 ```bash
-docker load -i yeomai-lore-web-1.1.4-linux-amd64.tar.gz
+docker load -i yeomai-lore-web-1.1.6-linux-amd64.tar.gz
 ```
 
 镜像加载后必须重新创建容器，不能只执行 `docker restart` 使用旧镜像。
@@ -924,4 +924,3 @@ QUIC 的 `/certs/lore.crt` 覆盖同一域名。
 - 使用当前源码重新构建镜像，并在新的临时容器中重新执行本节验收。
 
 本次验收没有执行创建、修改、提交、推送、删除或权限变更操作。
-

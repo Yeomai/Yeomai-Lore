@@ -11,7 +11,7 @@ const apiInternalUrl = process.env.API_INTERNAL_URL ?? "http://localhost:4000";
 
 const nextConfig: NextConfig = {
   agentRules: false,
-  allowedDevOrigins: ["localhost", "127.0.0.1", "192.168.0.183"],
+  allowedDevOrigins: ["localhost", "127.0.0.1"],
   devIndicators: false,
   transpilePackages: ["@lore-portal/shared"],
   poweredByHeader: false,

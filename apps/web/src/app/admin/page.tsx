@@ -89,6 +89,8 @@ interface SystemInfo {
   webPublicUrl: string;
   lorePublicUrl: string;
   loreReady: boolean;
+  loreStoreMaxSizeBytes: number;
+  loreStoreCompactionDelayMs: number;
 }
 
 interface ImportJob {
@@ -392,6 +394,7 @@ export default async function AdminPage({
             <SystemInfoPanel
               info={systemInfo}
               messages={messages}
+              locale={locale}
             />
           ) : null}
         </div>
@@ -485,15 +488,31 @@ function AdminSidebar({
 function SystemInfoPanel({
   info,
   messages,
+  locale,
 }: {
   info: SystemInfo;
   messages: Messages;
+  locale: string;
 }) {
   const m = messages.admin;
+  const number = new Intl.NumberFormat(locale);
+  const decimal = new Intl.NumberFormat(locale, {
+    maximumFractionDigits: 1,
+  });
   return (
     <section className="panel">
       <div className="system-info-scroll">
         <dl className="profile-details system-info-list">
+          <div>
+            <dt>{m.serverStatus}</dt>
+            <dd>
+              <span
+                className={`badge ${info.loreReady ? "status-active" : "status-failed"}`}
+              >
+                {info.loreReady ? m.serverReady : m.serverUnavailable}
+              </span>
+            </dd>
+          </div>
           <div>
             <dt>{m.webManagementAddress}</dt>
             <dd>
@@ -507,13 +526,31 @@ function SystemInfoPanel({
             </dd>
           </div>
           <div>
-            <dt>{m.serverStatus}</dt>
+            <dt>{m.gcTriggerThreshold}</dt>
             <dd>
-              <span
-                className={`badge ${info.loreReady ? "status-active" : "status-failed"}`}
-              >
-                {info.loreReady ? m.serverReady : m.serverUnavailable}
-              </span>
+              <code>
+                {formatMessage(m.gcTriggerThresholdValue, {
+                  size: `${decimal.format(
+                    info.loreStoreMaxSizeBytes / 1024 ** 3,
+                  )} GiB`,
+                  bytes: number.format(info.loreStoreMaxSizeBytes),
+                })}
+              </code>
+            </dd>
+          </div>
+          <div>
+            <dt>{m.automaticGcInterval}</dt>
+            <dd>
+              <code>
+                {formatMessage(m.automaticGcIntervalValue, {
+                  hours: decimal.format(
+                    info.loreStoreCompactionDelayMs / 3_600_000,
+                  ),
+                  milliseconds: number.format(
+                    info.loreStoreCompactionDelayMs,
+                  ),
+                })}
+              </code>
             </dd>
           </div>
         </dl>
@@ -541,7 +578,7 @@ http://[::1]:3000`}</code>
         <section>
           <h4>{m.transportSecurityDenied}</h4>
           <pre>
-            <code>{`http://192.168.0.196:3000
+            <code>{`http://192.168.1.10:3000
 http://lore.intra.company.com`}</code>
           </pre>
         </section>

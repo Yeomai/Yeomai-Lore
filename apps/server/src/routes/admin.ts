@@ -33,6 +33,7 @@ import {
 import {
   loreCertificateRequired,
   readLoreCertificateStatus,
+  readLoreStoreGcConfig,
   readSiteSettings,
   validateLoreCertificate,
   writeLoreCertificate,
@@ -100,10 +101,13 @@ export const registerAdminRoutes: FastifyPluginAsync = async (app) => {
   app.get("/system-info", async (request) => {
     await requireAdmin(request);
     const settings = await readSiteSettings(db, config);
+    const storeGc = await readLoreStoreGcConfig(config.loreRuntimeConfigPath);
     return {
       webPublicUrl: settings.webPublicUrl,
       lorePublicUrl: settings.lorePublicUrl,
       loreReady: await (app.services.serviceReadiness?.() ?? true),
+      loreStoreMaxSizeBytes: storeGc.maxSize,
+      loreStoreCompactionDelayMs: storeGc.compactionDelay,
     };
   });
 

@@ -29,16 +29,17 @@ describe("commit graph", () => {
     ]);
 
     expect(
-      rows.map(({ signature, lane, parentLanes }) => ({
+      rows.map(({ signature, lane, activeLaneCount, parentLanes }) => ({
         signature,
         lane,
+        activeLaneCount,
         parents: parentLanes.map(({ lane }) => lane),
       })),
     ).toEqual([
-      { signature: "merge", lane: 0, parents: [0, 1] },
-      { signature: "develop", lane: 0, parents: [0] },
-      { signature: "archived", lane: 1, parents: [0] },
-      { signature: "base", lane: 0, parents: [] },
+      { signature: "merge", lane: 0, activeLaneCount: 2, parents: [0, 1] },
+      { signature: "develop", lane: 0, activeLaneCount: 2, parents: [0] },
+      { signature: "archived", lane: 1, activeLaneCount: 2, parents: [0] },
+      { signature: "base", lane: 0, activeLaneCount: 1, parents: [] },
     ]);
   });
 

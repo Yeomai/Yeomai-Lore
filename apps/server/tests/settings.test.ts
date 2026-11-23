@@ -1,4 +1,9 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,6 +25,7 @@ describe("system settings", () => {
       APP_PUBLIC_URL: "http://localhost:3000",
       API_INTERNAL_URL: "http://localhost:4000",
       OIDC_KEY_DIR: path.join(directory, "keys"),
+      LORE_RUNTIME_CONFIG_PATH: path.join(directory, "config", "local.toml"),
       SMTP_URL: "",
     });
     let app: Awaited<ReturnType<typeof buildApp>> | undefined;
@@ -72,6 +78,28 @@ describe("system settings", () => {
         webPublicUrl: "http://localhost:3000",
         lorePublicUrl: "lore://localhost:3000",
         loreReady: true,
+        loreStoreMaxSizeBytes: 80_530_636_800,
+        loreStoreCompactionDelayMs: 172_800_000,
+      });
+
+      mkdirSync(path.dirname(config.loreRuntimeConfigPath), {
+        recursive: true,
+      });
+      writeFileSync(
+        config.loreRuntimeConfigPath,
+        `[immutable_store.local]
+max_size = 68719476736
+compaction_delay = 86400000
+`,
+      );
+      const customSystemInfo = await app.inject({
+        method: "GET",
+        url: "/api/v1/admin/system-info",
+        headers,
+      });
+      expect(customSystemInfo.json()).toMatchObject({
+        loreStoreMaxSizeBytes: 68_719_476_736,
+        loreStoreCompactionDelayMs: 86_400_000,
       });
 
       const unauthenticatedSystemInfo = await app.inject({

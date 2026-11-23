@@ -6,6 +6,7 @@ export interface OAuthIdentity {
   clientId: string;
   scope: string;
   createdAt: string;
+  sessionStartedAt: string;
   accessExpiresAt: string;
   expiresAt: string;
   deviceId: string | null;
@@ -22,6 +23,7 @@ interface OAuthIdentityRow {
   client_id: string;
   scope: string;
   created_at: string;
+  session_started_at: string;
   expires_at: string;
   device_id: string | null;
   device_code: string | null;
@@ -38,7 +40,9 @@ export async function listOAuthIdentities(
 ): Promise<OAuthIdentity[]> {
   const result = await db.query<OAuthIdentityRow>(
     `SELECT COALESCE(t.oauth_session_id, t.token_hash) AS oauth_session_id,
-            t.token_hash, t.client_id, t.scope, t.created_at, t.expires_at,
+            t.token_hash, t.client_id, t.scope, t.created_at,
+            COALESCE(t.session_started_at, t.created_at) AS session_started_at,
+            t.expires_at,
             d.id AS device_id, d.device_code, d.note, d.user_agent,
             d.last_ip, d.last_seen_at
        FROM oauth_refresh_tokens t
@@ -55,6 +59,7 @@ export async function listOAuthIdentities(
     clientId: row.client_id,
     scope: row.scope,
     createdAt: row.created_at,
+    sessionStartedAt: row.session_started_at,
     accessExpiresAt: new Date(
       Date.parse(row.created_at) + accessTokenTtlSeconds * 1000,
     ).toISOString(),

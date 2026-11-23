@@ -15,13 +15,12 @@ import {
   serverApiResponse,
 } from "../../../../lib/api";
 import { getI18n } from "../../../../i18n/server";
-import {
-  formatMessage,
-  type Messages,
-} from "../../../../i18n/messages";
+import type { Messages } from "../../../../i18n/messages";
 import { CopyButton } from "../../../../components/CopyButton";
 import { BrowserTime } from "../../../../components/BrowserTime";
 import { ClearFileSelectionOnReload } from "../../../../components/ClearFileSelectionOnReload";
+import { CommitChangedFiles } from "../../../../components/CommitChangedFiles";
+import { RepositoryFileSearch } from "../../../../components/RepositoryFileSearch";
 import {
   isMarkdownPath,
   MarkdownBody,
@@ -231,13 +230,13 @@ export default async function RepositoryPage({
         )
       : null;
   const textDiff =
-    mode === "diff" && selectedFile
+    selectedFile && diffTo && (mode === "diff" || (mode === "commit" && diffFrom))
       ? await serverApi<TextDiff>(
           `${basePath}/text-diff?${new URLSearchParams({
             branch: selectedBranch,
             path: selectedFile,
-            ...(one(query.from) ? { from: one(query.from)! } : {}),
-            ...(one(query.to) ? { to: one(query.to)! } : {}),
+            ...(diffFrom ? { from: diffFrom } : {}),
+            to: diffTo,
           })}`,
         )
       : null;
@@ -276,60 +275,89 @@ export default async function RepositoryPage({
 
       <section className="panel repo-main">
         <div className="repo-toolbar">
-          <details className="repo-dropdown" data-dropdown>
-            <summary>
-              <strong>{selectedBranch}</strong>
-            </summary>
-            <div className="repo-dropdown-menu branch-dropdown-menu">
-              <span className="repo-menu-label">{m.branches}</span>
-              {branches.length === 0 ? (
-                <span className="muted">
-                  {repository.defaultBranchName}
-                </span>
-              ) : (
-                branchRows.map((branch) => (
-                  <a
-                    className={`branch-menu-item ${
-                      branch.name === selectedBranch ? "active" : ""
-                    }`}
-                    href={`${pagePath}?${new URLSearchParams({
-                      branch: branch.name,
-                      view: mode,
-                      ...(mode === "tree" ? { path: "" } : {}),
-                    })}`}
-                    key={branch.id}
-                    style={{ paddingLeft: `${10 + branch.depth * 20}px` }}
-                  >
-                    <span className="branch-menu-name">
-                      <span className="branch-menu-caret">
-                        {branch.hasChildren ? "▾" : "·"}
-                      </span>
-                      <span>{branch.name}</span>
-                      {branch.id === repository.defaultBranchId ? (
-                        <span className="badge">
-                          {messages.common.defaultBranch}
+          <div className="repo-ref-bar">
+            <details className="repo-dropdown" data-dropdown>
+              <summary>
+                <BranchIcon />
+                <strong>{selectedBranch}</strong>
+              </summary>
+              <div className="repo-dropdown-menu branch-dropdown-menu">
+                <span className="repo-menu-label">{m.branches}</span>
+                {branches.length === 0 ? (
+                  <span className="muted">
+                    {repository.defaultBranchName}
+                  </span>
+                ) : (
+                  branchRows.map((branch) => (
+                    <a
+                      className={`branch-menu-item ${
+                        branch.name === selectedBranch ? "active" : ""
+                      }`}
+                      href={`${pagePath}?${new URLSearchParams({
+                        branch: branch.name,
+                        view: mode,
+                        ...(mode === "tree" ? { path: "" } : {}),
+                      })}`}
+                      key={branch.id}
+                      style={{ paddingLeft: `${10 + branch.depth * 20}px` }}
+                    >
+                      <span className="branch-menu-name">
+                        <span className="branch-menu-caret">
+                          {branch.hasChildren ? "▾" : "·"}
                         </span>
-                      ) : null}
-                      {branch.name === selectedBranch ? (
-                        <span className="branch-check">✓</span>
-                      ) : null}
-                    </span>
-                    <code title={branch.id}>{branch.id}</code>
-                  </a>
-                ))
-              )}
+                        <span>{branch.name}</span>
+                        {branch.id === repository.defaultBranchId ? (
+                          <span className="badge">
+                            {messages.common.defaultBranch}
+                          </span>
+                        ) : null}
+                        {branch.name === selectedBranch ? (
+                          <span className="branch-check">✓</span>
+                        ) : null}
+                      </span>
+                      <code title={branch.id}>{branch.id}</code>
+                    </a>
+                  ))
+                )}
+              </div>
+            </details>
+            <div className="repo-ref-counts">
+              <span className="repo-ref-count">
+                <BranchIcon />
+                <strong>{branches.length}</strong>
+                <span>{branches.length === 1 ? m.branch : m.branches}</span>
+              </span>
+              <Link
+                className="repo-ref-count repo-ref-count-link"
+                href={`${pagePath}?${new URLSearchParams({
+                  branch: selectedBranch,
+                  view: "tags",
+                })}`}
+                aria-current={mode === "tags" ? "page" : undefined}
+              >
+                <TagIcon />
+                <strong>{tags.length}</strong>
+                <span>{tags.length === 1 ? m.tag : m.tags}</span>
+              </Link>
             </div>
-          </details>
-          <details className="repo-dropdown code-dropdown" data-dropdown>
-            <summary>
-              <strong>{m.code}</strong>
-            </summary>
-            <div className="repo-dropdown-menu repo-code-menu">
-              <span className="repo-menu-label">{m.cloneCommand}</span>
-              <code>{command}</code>
-              <CopyButton value={command} />
-            </div>
-          </details>
+          </div>
+          <div className="repo-toolbar-actions">
+            <RepositoryFileSearch
+              basePath={basePath}
+              pagePath={pagePath}
+              branch={selectedBranch}
+            />
+            <details className="repo-dropdown code-dropdown" data-dropdown>
+              <summary>
+                <strong>{m.code}</strong>
+              </summary>
+              <div className="repo-dropdown-menu repo-code-menu">
+                <span className="repo-menu-label">{m.cloneCommand}</span>
+                <code>{command}</code>
+                <CopyButton value={command} />
+              </div>
+            </details>
+          </div>
         </div>
         <nav className="tabs">
             <Link
@@ -351,15 +379,6 @@ export default async function RepositoryPage({
             >
               {m.commit}
             </Link>
-            <Link
-              className={mode === "diff" ? "active" : ""}
-              href={`${pagePath}?${new URLSearchParams({
-                branch: selectedBranch,
-                view: "diff",
-              })}`}
-            >
-              {m.changes}
-            </Link>
             {tags.length > 0 ? (
               <Link
                 className={mode === "tags" ? "active" : ""}
@@ -372,12 +391,16 @@ export default async function RepositoryPage({
               </Link>
             ) : null}
         </nav>
-        <div className="repo-view-content">
+        <div
+          className={`repo-view-content ${
+            mode === "commit" ? "commit-view-content" : ""
+          }`}
+        >
           {mode === "commit" ? (
             <CommitView
               revisions={revisions}
+              tags={tags}
               revision={selectedRevision}
-              diffResponse={diffResponse}
               pagePath={pagePath}
               branch={selectedBranch}
               commitTab={commitTab}
@@ -416,6 +439,18 @@ export default async function RepositoryPage({
           )}
         </div>
       </section>
+      {mode === "commit" && selectedRevision ? (
+        <CommitDetail
+          revision={selectedRevision}
+          diffResponse={diffResponse}
+          selectedFile={selectedFile}
+          textDiff={textDiff}
+          pagePath={pagePath}
+          branch={selectedBranch}
+          commitTab={commitTab}
+          messages={messages}
+        />
+      ) : null}
       {hasRepositoryPreview ? (
         <div className="repo-preview-area">
           {selectedFile && filePreview ? (
@@ -449,6 +484,44 @@ export default async function RepositoryPage({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function BranchIcon() {
+  return (
+    <svg
+      className="repo-ref-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+      aria-hidden="true"
+    >
+      <circle cx="6" cy="5" r="2" />
+      <circle cx="6" cy="19" r="2" />
+      <circle cx="18" cy="7" r="2" />
+      <path d="M6 7v10M8 17h2a8 8 0 0 0 8-8" />
+    </svg>
+  );
+}
+
+function TagIcon() {
+  return (
+    <svg
+      className="repo-ref-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      strokeWidth="1.8"
+      aria-hidden="true"
+    >
+      <path d="m20 13-7 7-10-10V3h7l10 10Z" />
+      <circle cx="8" cy="8" r="1.5" />
+    </svg>
   );
 }
 
@@ -491,8 +564,8 @@ function TagsView({
 
 function CommitView({
   revisions,
+  tags,
   revision,
-  diffResponse,
   pagePath,
   branch,
   commitTab,
@@ -500,12 +573,8 @@ function CommitView({
   locale,
 }: {
   revisions: RevisionSummary[];
+  tags: RepositoryTag[];
   revision: RevisionSummary | undefined;
-  diffResponse: {
-    files: DiffFile[];
-    from: string | null;
-    to: string | null;
-  } | null;
   pagePath: string;
   branch: string;
   commitTab: "graph" | "list";
@@ -513,14 +582,17 @@ function CommitView({
   locale: string;
 }) {
   const m = messages.repository;
-  const changedFiles =
-    diffResponse?.files.filter((file) => file.type !== "directory") ?? [];
+  const tagsByRevision = new Map<string, RepositoryTag[]>();
+  for (const tag of tags) {
+    const revisionTags = tagsByRevision.get(tag.revision) ?? [];
+    revisionTags.push(tag);
+    tagsByRevision.set(tag.revision, revisionTags);
+  }
   if (!revision) {
     return <p className="empty-cell">{m.emptyRepository}</p>;
   }
   return (
-    <div className="commit-layout">
-      <section className="commit-history">
+    <section className="commit-history">
         <div className="commit-history-heading">
           <nav className="commit-view-tabs">
             <Link
@@ -550,6 +622,7 @@ function CommitView({
         {commitTab === "graph" ? (
           <CommitGraph
             revisions={revisions}
+            tagsByRevision={tagsByRevision}
             revision={revision}
             pagePath={pagePath}
             branch={branch}
@@ -571,7 +644,10 @@ function CommitView({
               key={item.signature}
               role="row"
             >
-              <span role="cell">{item.message || m.noMessage}</span>
+              <span role="cell" className="commit-history-summary">
+                <RevisionTags tags={tagsByRevision.get(item.signature)} />
+                <span>{item.message || m.noMessage}</span>
+              </span>
               <span role="cell">{item.committedBy || m.unknown}</span>
               <code role="cell">{item.signature.slice(0, 8)}</code>
               <BrowserTime
@@ -583,55 +659,70 @@ function CommitView({
           ))}
           </div>
         )}
-      </section>
-      <section className="commit-detail">
-        <div className="commit-overview">
-          <p className="eyebrow">
-            {formatMessage(m.commitNumber, { number: revision.number })}
-          </p>
-          <h2>{revision.message || m.noMessage}</h2>
+    </section>
+  );
+}
+
+function CommitDetail({
+  revision,
+  diffResponse,
+  selectedFile,
+  textDiff,
+  pagePath,
+  branch,
+  commitTab,
+  messages,
+}: {
+  revision: RevisionSummary;
+  diffResponse: {
+    files: DiffFile[];
+    from: string | null;
+    to: string | null;
+  } | null;
+  selectedFile: string | undefined;
+  textDiff: TextDiff | null;
+  pagePath: string;
+  branch: string;
+  commitTab: "graph" | "list";
+  messages: Messages;
+}) {
+  const m = messages.repository;
+  const changedFiles =
+    diffResponse?.files.filter((file) => file.type !== "directory") ?? [];
+
+  return (
+    <section className="panel commit-detail-layout">
+      <div className="commit-detail">
+        <CommitChangedFiles
+          revisionNumber={revision.number}
+          revisionMessage={revision.message}
+          files={changedFiles}
+          comparisonAvailable={Boolean(diffResponse?.from && diffResponse.to)}
+          selectedFile={selectedFile}
+          pagePath={pagePath}
+          branch={branch}
+          revision={revision.signature}
+          commitTab={commitTab}
+        />
+      </div>
+      <div className="commit-diff-panel">
+        <div className="commit-diff-heading">
+          <h3>{m.changes}</h3>
+          {selectedFile ? <code>{selectedFile}</code> : null}
         </div>
-        <div className="commit-changes">
-          <div className="section-heading tight">
-            <h3>{m.changedFiles}</h3>
-            <span className="count">{changedFiles.length}</span>
-          </div>
-          {!diffResponse?.from || !diffResponse.to ? (
-            <p className="muted">{m.firstRevision}</p>
-          ) : changedFiles.length === 0 ? (
-            <p className="muted">{m.noChangedFiles}</p>
-          ) : (
-            <div className="commit-file-list">
-              {changedFiles.map((file) => (
-                <Link
-                  href={`${pagePath}?${new URLSearchParams({
-                    branch,
-                    view: "diff",
-                    from: diffResponse.from!,
-                    to: diffResponse.to!,
-                    file: file.path,
-                  })}`}
-                  key={`${file.action}:${file.path}`}
-                >
-                  <span className={`change-kind ${file.action}`}>
-                    {file.action === "keep"
-                      ? "M"
-                      : file.action.slice(0, 1).toUpperCase()}
-                  </span>
-                  <span>{file.path}</span>
-                  <small>{changeActionLabel(file.action, messages)}</small>
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
-    </div>
+        <DiffContent
+          selectedFile={selectedFile}
+          textDiff={textDiff}
+          messages={messages}
+        />
+      </div>
+    </section>
   );
 }
 
 function CommitGraph({
   revisions,
+  tagsByRevision,
   revision,
   pagePath,
   branch,
@@ -639,6 +730,7 @@ function CommitGraph({
   locale,
 }: {
   revisions: RevisionSummary[];
+  tagsByRevision: Map<string, RepositoryTag[]>;
   revision: RevisionSummary;
   pagePath: string;
   branch: string;
@@ -691,6 +783,7 @@ function CommitGraph({
       {rows.map((row) => (
         <CommitGraphLink
           row={row}
+          tags={tagsByRevision.get(row.signature)}
           active={row.signature === revision.signature}
           pagePath={pagePath}
           branch={branch}
@@ -705,6 +798,7 @@ function CommitGraph({
 
 function CommitGraphLink({
   row,
+  tags,
   active,
   pagePath,
   branch,
@@ -712,6 +806,7 @@ function CommitGraphLink({
   locale,
 }: {
   row: CommitGraphRow;
+  tags: RepositoryTag[] | undefined;
   active: boolean;
   pagePath: string;
   branch: string;
@@ -728,6 +823,14 @@ function CommitGraphLink({
         commits: "graph",
         revision: row.signature,
       })}`}
+      style={
+        {
+          "--commit-row-content-offset": `${
+            COMMIT_GRAPH_PADDING +
+            row.activeLaneCount * COMMIT_LANE_WIDTH
+          }px`,
+        } as React.CSSProperties
+      }
       scroll={false}
     >
       <span className="commit-graph-node-slot">
@@ -742,7 +845,10 @@ function CommitGraphLink({
           }}
         />
       </span>
-      <strong>{row.message || m.noMessage}</strong>
+      <span className="commit-graph-summary">
+        <RevisionTags tags={tags} />
+        <strong>{row.message || m.noMessage}</strong>
+      </span>
       <span className="commit-graph-user">
         <span>{(row.committedBy || m.unknown).slice(0, 1)}</span>
         {row.committedBy || m.unknown}
@@ -750,6 +856,28 @@ function CommitGraphLink({
       <code>{row.signature.slice(0, 10)}</code>
       <BrowserTime value={row.timestamp} locale={locale} />
     </Link>
+  );
+}
+
+function RevisionTags({ tags }: { tags: RepositoryTag[] | undefined }) {
+  if (!tags?.length) return null;
+  const visibleTags = tags.slice(0, 4);
+  return (
+    <span
+      className="revision-tags"
+      title={tags.map((tag) => tag.name).join(", ")}
+    >
+      {visibleTags.map((tag) => (
+        <span className="revision-tag" key={tag.name}>
+          {tag.name}
+        </span>
+      ))}
+      {tags.length > visibleTags.length ? (
+        <span className="revision-tag revision-tag-more">
+          +{tags.length - visibleTags.length}
+        </span>
+      ) : null}
+    </span>
   );
 }
 
@@ -1054,38 +1182,57 @@ function DiffView({
           branch={branch}
         />
       </div>
-      <div className="diff-content">
-        {textDiff?.to ? (
-          <div className="diff-inline-heading">
-            <span>{textDiff.from ? m.comparing : m.createdIn}</span>
-            <code>
-              {textDiff.from
-                ? `${textDiff.from.slice(0, 10)} → ${textDiff.to.slice(0, 10)}`
-                : textDiff.to.slice(0, 10)}
-            </code>
+      <DiffContent
+        selectedFile={selectedFile}
+        textDiff={textDiff}
+        messages={messages}
+      />
+    </div>
+  );
+}
+
+function DiffContent({
+  selectedFile,
+  textDiff,
+  messages,
+}: {
+  selectedFile: string | undefined;
+  textDiff: TextDiff | null;
+  messages: Messages;
+}) {
+  const m = messages.repository;
+  return (
+    <div className="diff-content">
+      {textDiff?.to ? (
+        <div className="diff-inline-heading">
+          <span>{textDiff.from ? m.comparing : m.createdIn}</span>
+          <code>
+            {textDiff.from
+              ? `${textDiff.from.slice(0, 10)} → ${textDiff.to.slice(0, 10)}`
+              : textDiff.to.slice(0, 10)}
+          </code>
+        </div>
+      ) : null}
+      {textDiff?.to ? (
+        <>
+          <div className="diff-summary">
+            <strong>{selectedFile}</strong>
+            <span className="added">+{textDiff.linesAdded}</span>
+            <span className="removed">−{textDiff.linesDeleted}</span>
           </div>
-        ) : null}
-        {textDiff?.to ? (
-          <>
-            <div className="diff-summary">
-              <strong>{selectedFile}</strong>
-              <span className="added">+{textDiff.linesAdded}</span>
-              <span className="removed">−{textDiff.linesDeleted}</span>
-            </div>
-            {textDiff.binary ? (
-              <p className="empty-cell">{m.binaryDiff}</p>
-            ) : textDiff.truncated ? (
-              <p className="empty-cell">{m.largeDiff}</p>
-            ) : (
-              <pre className="diff-text">{colorDiff(textDiff.text)}</pre>
-            )}
-          </>
-        ) : (
-          <p className="empty-cell">
-            {selectedFile ? m.noFileChanges : m.selectFile}
-          </p>
-        )}
-      </div>
+          {textDiff.binary ? (
+            <p className="empty-cell">{m.binaryDiff}</p>
+          ) : textDiff.truncated ? (
+            <p className="empty-cell">{m.largeDiff}</p>
+          ) : (
+            <pre className="diff-text">{colorDiff(textDiff.text)}</pre>
+          )}
+        </>
+      ) : (
+        <p className="empty-cell">
+          {selectedFile ? m.noFileChanges : m.selectFile}
+        </p>
+      )}
     </div>
   );
 }
@@ -1173,22 +1320,6 @@ function colorDiff(text: string): React.ReactNode {
       </span>
     );
   });
-}
-
-function changeActionLabel(action: DiffFile["action"], messages: Messages) {
-  const m = messages.repository;
-  switch (action) {
-    case "add":
-      return m.actionAdded;
-    case "delete":
-      return m.actionDeleted;
-    case "move":
-      return m.actionMoved;
-    case "copy":
-      return m.actionCopied;
-    default:
-      return m.actionModified;
-  }
 }
 
 const MAX_TEXT_PREVIEW_BYTES = 2 * 1024 * 1024;

@@ -34,6 +34,8 @@ pkey_file = "/certs/grpc.key"
 [immutable_store.local]
 path = "/data/lore/store"
 flush_delay_seconds = 2
+max_size = 80530636800
+compaction_delay = 172800000
 
 [mutable_store.local]
 path = "/data/lore/store"

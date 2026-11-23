@@ -138,6 +138,7 @@ describe("OAuth identity management", () => {
         clientId: "lore-cli",
         scope: "openid offline_access",
       });
+      expect(listed.json().identities[0].sessionStartedAt).toBeTruthy();
       const firstSessionId = listed.json().identities[0].id as string;
       const initialRefreshExpiresAt = Date.parse(
         listed.json().identities[0].expiresAt,
@@ -228,6 +229,11 @@ describe("OAuth identity management", () => {
       );
       expect(Date.parse(refreshedIdentity.expiresAt)).toBe(
         sameDeviceRefreshExpiresAt,
+      );
+      expect(refreshedIdentity.sessionStartedAt).toBe(
+        sameDeviceList.json().identities.find(
+          (identity: { id: string }) => identity.id === sameDeviceIdentity.id,
+        ).sessionStartedAt,
       );
 
       const sameNetworkAuthorization = await app.inject({

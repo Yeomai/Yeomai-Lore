@@ -18,11 +18,18 @@ import { isUserRegistrationEnabled } from "./settings.ts";
 const SITE_NAME = "site_name";
 const WEB_PUBLIC_URL = "web_public_url";
 const LORE_PUBLIC_URL = "lore_public_url";
+export const LORE_STORE_MAX_SIZE_BYTES = 80_530_636_800;
+export const LORE_STORE_COMPACTION_DELAY_MS = 48 * 60 * 60 * 1_000;
 
 export interface SiteSettings {
   siteName: string;
   webPublicUrl: string;
   lorePublicUrl: string;
+}
+
+export interface LoreStoreGcConfig {
+  maxSize: number;
+  compactionDelay: number;
 }
 
 export interface LegacyAddressMigration {
@@ -454,10 +461,25 @@ export async function readLoreCertificateStatus(config: AppConfig) {
   }
 }
 
+export async function readLoreStoreGcConfig(
+  configPath: string,
+): Promise<LoreStoreGcConfig> {
+  const content = await readFile(configPath, "utf8").catch(() => "");
+  const section = readTomlTable(content, "immutable_store.local");
+  return {
+    maxSize:
+      readTomlInteger(section, "max_size") ?? LORE_STORE_MAX_SIZE_BYTES,
+    compactionDelay:
+      readTomlInteger(section, "compaction_delay") ??
+      LORE_STORE_COMPACTION_DELAY_MS,
+  };
+}
+
 export async function writeLoreRuntimeConfig(
   config: AppConfig,
   settings: SiteSettings,
 ): Promise<void> {
+  const storeGc = await readLoreStoreGcConfig(config.loreRuntimeConfigPath);
   const content = `[environment.endpoint]
 user_url = ${tomlString(`https://localhost:${config.grpcPort}`)}
 auth_url = ${tomlString(`https://localhost:${config.grpcPort}`)}
@@ -488,6 +510,8 @@ pkey_file = ${tomlString(config.loreQuicTlsKeyFile)}
 [immutable_store.local]
 path = ${tomlString(config.loreStoragePath)}
 flush_delay_seconds = 2
+max_size = ${storeGc.maxSize}
+compaction_delay = ${storeGc.compactionDelay}
 
 [mutable_store.local]
 path = ${tomlString(config.loreStoragePath)}
@@ -495,6 +519,31 @@ flush_delay_seconds = 2
 `;
   await mkdir(path.dirname(config.loreRuntimeConfigPath), { recursive: true });
   await writeFile(config.loreRuntimeConfigPath, content, { mode: 0o600 });
+}
+
+function readTomlTable(content: string, table: string): string {
+  const lines = content.split(/\r?\n/);
+  let active = false;
+  const selected: string[] = [];
+  for (const line of lines) {
+    const header = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/.exec(line);
+    if (header) {
+      active = header[1] === table;
+      continue;
+    }
+    if (active) selected.push(line);
+  }
+  return selected.join("\n");
+}
+
+function readTomlInteger(content: string, key: string): number | null {
+  const match = new RegExp(
+    `^\\s*${key}\\s*=\\s*(\\d[\\d_]*)\\s*(?:#.*)?$`,
+    "m",
+  ).exec(content);
+  if (!match) return null;
+  const value = Number(match[1]!.replaceAll("_", ""));
+  return Number.isSafeInteger(value) ? value : null;
 }
 
 async function writeFileAtomic(

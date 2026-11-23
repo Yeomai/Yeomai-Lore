@@ -130,6 +130,9 @@ function openApiDocument(config: AppConfig): Record<string, unknown> {
       "/api/v1/repos/{organizationSlug}/{repositorySlug}/tags": {
         get: { summary: "List imported Git tags" },
       },
+      "/api/v1/repos/{organizationSlug}/{repositorySlug}/file-index": {
+        get: { summary: "List searchable file paths for a branch revision" },
+      },
       "/api/v1/repos/{organizationSlug}/{repositorySlug}/revisions": {
         get: { summary: "List branch revisions" },
       },

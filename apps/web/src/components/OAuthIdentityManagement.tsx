@@ -15,6 +15,7 @@ export interface ManagedOAuthIdentity {
   clientId: string;
   scope: string;
   createdAt: string;
+  sessionStartedAt: string;
   accessExpiresAt: string;
   expiresAt: string;
   deviceId: string | null;
@@ -154,6 +155,13 @@ function OAuthIdentityRow({
           <p>{formatMessage(m.oauthScope, { scope: identity.scope })}</p>
         </div>
         <small className="oauth-identity-timestamps">
+          <span>
+            <BrowserTimeText
+              template={m.oauthSessionStartedAt}
+              value={identity.sessionStartedAt}
+              locale={locale}
+            />
+          </span>
           <span>
             <BrowserTimeText
               template={m.oauthCreatedAt}

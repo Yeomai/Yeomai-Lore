@@ -77,7 +77,7 @@ export function DashboardRepositories({
             title={m.cardView}
             onClick={() => changeView("cards")}
           >
-            <CardViewIcon />
+            <span className="repository-view-icon repository-view-icon-cards" />
           </button>
           <button
             className={view === "list" ? "active" : ""}
@@ -87,7 +87,7 @@ export function DashboardRepositories({
             title={m.listView}
             onClick={() => changeView("list")}
           >
-            <ListViewIcon />
+            <span className="repository-view-icon repository-view-icon-list" />
           </button>
         </div>
       </div>
@@ -251,28 +251,6 @@ function RepositoryCardSummary({
             )}
       </span>
     </div>
-  );
-}
-
-function CardViewIcon() {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      <rect x="2" y="2" width="5" height="5" rx="1" />
-      <rect x="11" y="2" width="5" height="5" rx="1" />
-      <rect x="2" y="11" width="5" height="5" rx="1" />
-      <rect x="11" y="11" width="5" height="5" rx="1" />
-    </svg>
-  );
-}
-
-function ListViewIcon() {
-  return (
-    <svg viewBox="0 0 18 18" aria-hidden="true">
-      <circle cx="3" cy="4" r="1" />
-      <circle cx="3" cy="9" r="1" />
-      <circle cx="3" cy="14" r="1" />
-      <path d="M6.5 4h9M6.5 9h9M6.5 14h9" />
-    </svg>
   );
 }
 
