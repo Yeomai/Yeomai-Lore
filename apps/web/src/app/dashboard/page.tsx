@@ -11,6 +11,7 @@ import {
   type DashboardRepository,
   type DashboardOrganization,
 } from "../../components/DashboardRepositories";
+import { DashboardAnnouncement } from "../../components/DashboardAnnouncement";
 
 interface Organization {
   id: string;
@@ -26,15 +27,18 @@ export default async function DashboardPage() {
   }
   const { locale, messages } = await getI18n();
   const m = messages.dashboard;
-  const [repositoriesResponse, organizationsResponse] = await Promise.all([
-    serverApi<{ repositories: DashboardRepository[] }>("/api/v1/repos"),
-    serverApi<{ organizations: Organization[] }>("/api/v1/orgs"),
-  ]);
+  const [repositoriesResponse, organizationsResponse, meta] =
+    await Promise.all([
+      serverApi<{ repositories: DashboardRepository[] }>("/api/v1/repos"),
+      serverApi<{ organizations: Organization[] }>("/api/v1/orgs"),
+      serverApi<{ loginAnnouncement: string }>("/api/v1/meta"),
+    ]);
   const repositories = repositoriesResponse.repositories;
   const organizations = organizationsResponse.organizations;
 
   return (
     <div className="page-stack">
+      <DashboardAnnouncement announcement={meta.loginAnnouncement} />
       <section className="hero">
         <div>
           <h1>{formatMessage(m.greeting, { name: user.displayName })}</h1>

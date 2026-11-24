@@ -10,7 +10,7 @@ export default async function DevicePage({
   const value = (await searchParams).user_code;
   const userCode = Array.isArray(value) ? value[0] ?? "" : value ?? "";
   const nextPath = `/device?user_code=${encodeURIComponent(userCode)}`;
-  const authenticated = Boolean(await getSession());
+  const sessionUser = await getSession();
   const { messages } = await getI18n();
   const m = messages.device;
   return (
@@ -19,7 +19,15 @@ export default async function DevicePage({
       <h1>{m.title}</h1>
       <DeviceApproval
         initialCode={userCode}
-        authenticated={authenticated}
+        initialApprover={
+          sessionUser
+            ? {
+                displayName: sessionUser.displayName,
+                email: sessionUser.email,
+                username: sessionUser.username,
+              }
+            : null
+        }
         loginNext={nextPath}
       />
     </section>

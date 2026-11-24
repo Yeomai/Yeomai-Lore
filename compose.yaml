@@ -10,7 +10,7 @@ services:
     restart: "no"
 
   app:
-    image: yeomai-lore-web:1.1.6
+    image: yeomai-lore-web:1.1.7
     build:
       context: .
       dockerfile: infra/app.Dockerfile
@@ -28,6 +28,7 @@ services:
       LORE_INTERNAL_URL: lore://localhost:41337
       LORE_CLI_PATH: /usr/local/bin/lore
       LORE_IMPORT_WORK_DIR: /data/imports
+      INTERNAL_GATEWAY_SECRET_FILE: /data/run/gateway-internal-secret
       GIT_PATH: git
       OIDC_KEY_DIR: /data/keys
       GRPC_HOST: 0.0.0.0

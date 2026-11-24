@@ -20,6 +20,7 @@ import {
   type QueryExecutor,
 } from "./db/index.ts";
 import { audit } from "./auth/audit.ts";
+import { assertPersonalRepositoryCountQuota } from "./quota-settings.ts";
 
 // Lore derives the default "main" branch context from the first 16 bytes of
 // BLAKE3("main"). Keeping the same value lets repositories created directly
@@ -294,29 +295,34 @@ export async function createPendingRepository(
   const loreName = `${input.organizationSlug}/${input.slug}`;
   const defaultBranchName = input.defaultBranchName ?? "main";
   try {
-    await db.query(
-      `INSERT INTO repositories
-         (id, organization_id, owner_user_id, slug, lore_name, description,
-          default_branch_id, default_branch_name, created_by, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')`,
-      [
-        id,
-        input.organizationId,
-        input.ownerUserId,
-        input.slug,
-        loreName,
-        input.description,
-        defaultBranchId,
-        defaultBranchName,
-        input.userId,
-      ],
-    );
-    await db.query(
-      `INSERT INTO repository_grants
-         (repository_id, subject_type, subject_id, permission)
-       VALUES ($1, 'user', $2, 'admin')`,
-      [id, input.userId],
-    );
+    await withTransaction(db, async (client) => {
+      if (input.ownerUserId === input.userId) {
+        await assertPersonalRepositoryCountQuota(client, input.userId);
+      }
+      await client.query(
+        `INSERT INTO repositories
+           (id, organization_id, owner_user_id, slug, lore_name, description,
+            default_branch_id, default_branch_name, created_by, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'pending')`,
+        [
+          id,
+          input.organizationId,
+          input.ownerUserId,
+          input.slug,
+          loreName,
+          input.description,
+          defaultBranchId,
+          defaultBranchName,
+          input.userId,
+        ],
+      );
+      await client.query(
+        `INSERT INTO repository_grants
+           (repository_id, subject_type, subject_id, permission)
+         VALUES ($1, 'user', $2, 'admin')`,
+        [id, input.userId],
+      );
+    });
   } catch (error) {
     if (isUniqueConstraint(error)) {
       throw conflict("A repository with that name already exists");
@@ -370,6 +376,12 @@ export async function registerRepositoryFromLore(
 
   try {
     await withTransaction(db, async (client) => {
+      if (ownerUserId === input.user.id) {
+        await assertPersonalRepositoryCountQuota(
+          client,
+          input.user.id,
+        );
+      }
       await client.query(
         `INSERT INTO repositories
            (id, organization_id, owner_user_id, slug, lore_name, description,

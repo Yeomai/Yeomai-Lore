@@ -141,6 +141,12 @@ describe("platform invitations", () => {
         payload: {
           userRegistrationEnabled: true,
           userInvitationsEnabled: true,
+          regularUserQuotaEnabled: false,
+          regularUserMaxRepositories: 1,
+          regularUserMaxSizeBytes: 5 * 1024 * 1024,
+          regularUserImportMaxBytes: 5 * 1024 * 1024,
+          regularUserRepositoryCleanupHours: 24,
+          loginAnnouncement: "",
         },
       });
       expect(enabled.statusCode).toBe(200);

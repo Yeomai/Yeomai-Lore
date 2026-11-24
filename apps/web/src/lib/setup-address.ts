@@ -3,6 +3,40 @@ export interface UnifiedSetupAddress {
   lorePublicUrl: string;
 }
 
+export type SetupDeploymentMode = "local" | "ip" | "domain";
+
+export function classifySetupAddress(
+  value: string,
+): SetupDeploymentMode | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  let parsed: URL;
+  try {
+    const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
+    parsed = new URL(
+      hasScheme
+        ? trimmed
+        : `${isLoopbackAddressInput(trimmed) ? "http" : "https"}://${trimmed}`,
+    );
+  } catch {
+    return null;
+  }
+  const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
+  if (host === "localhost" || host === "::1" || host.startsWith("127.")) {
+    return "local";
+  }
+  const octets = host.split(".").map(Number);
+  if (
+    octets.length === 4 &&
+    octets.every(
+      (octet) => Number.isInteger(octet) && octet >= 0 && octet <= 255,
+    )
+  ) {
+    return "ip";
+  }
+  return host.includes(":") ? "ip" : "domain";
+}
+
 export function deriveUnifiedPublicAddress(
   value: string,
 ): UnifiedSetupAddress | null {
@@ -14,7 +48,7 @@ export function deriveUnifiedPublicAddress(
     const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
     const candidate = hasScheme
       ? trimmed
-      : `${isLocalAddressInput(trimmed) ? "http" : "https"}://${trimmed}`;
+      : `${isLoopbackAddressInput(trimmed) ? "http" : "https"}://${trimmed}`;
     parsed = new URL(candidate);
   } catch {
     return null;
@@ -45,7 +79,7 @@ export function toUnifiedSetupAddress(webAddress: string): string {
   try {
     const parsed = new URL(webAddress);
     const authority = parsed.host;
-    return parsed.protocol === "http:" && isLocalAddressInput(authority)
+    return parsed.protocol === "http:" && isLoopbackAddressInput(authority)
       ? authority
       : parsed.protocol === "https:"
         ? authority
@@ -76,25 +110,15 @@ export function deriveLoreAddress(webAddress: string): string {
   }
 }
 
-function isLocalAddressInput(value: string): boolean {
+function isLoopbackAddressInput(value: string): boolean {
   const bracketed = value.match(/^\[([^\]]+)\]/);
   const host = (
     bracketed?.[1] ?? value.split(":")[0] ?? ""
   ).toLowerCase();
-  if (host === "localhost" || host === "::1" || host.endsWith(".local")) {
+  if (host === "localhost" || host === "::1") {
     return true;
   }
-  const octets = host.split(".").map(Number);
-  if (octets.length !== 4 || octets.some((octet) => Number.isNaN(octet))) {
-    return false;
-  }
-  const [first = 0, second = 0] = octets;
-  return (
-    first === 10 ||
-    first === 127 ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168)
-  );
+  return host === "127.0.0.1" || host.startsWith("127.");
 }
 
 export function needsLoreCertificate(loreAddress: string): boolean {
@@ -104,21 +128,11 @@ export function needsLoreCertificate(loreAddress: string): boolean {
       return false;
     }
     const host = parsed.hostname.replace(/^\[|\]$/g, "").toLowerCase();
-    if (host === "localhost" || host === "::1" || host.endsWith(".local")) {
+    if (host === "localhost" || host === "::1") {
       return false;
     }
-    const ipv4 = host.match(/^(\d+)\.(\d+)\./);
-    if (ipv4) {
-      const first = Number(ipv4[1]);
-      const second = Number(ipv4[2]);
-      return !(
-        first === 10 ||
-        first === 127 ||
-        (first === 172 && second >= 16 && second <= 31) ||
-        (first === 192 && second === 168)
-      );
-    }
-    return true;
+    return !host.includes(":") &&
+      !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(host);
   } catch {
     return false;
   }

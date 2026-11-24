@@ -1,19 +1,38 @@
 # Yeomai Lore
 
-[English](README.md) | [简体中文](README.zh-CN.md)
+<p align="center">
+  <a href="./README.md">English</a> |
+  <a href="./README.zh-CN.md">简体中文</a>
+</p>
 
 <p align="center">
   <img width="180" alt="Yeomai Lore" src="apps/web/public/logo.jpg" />
 </p>
 <p align="center">
-  <img width="100%" alt="Yeomai Lore 产品介绍" src="https://github.com/user-attachments/assets/6e3ba35a-833f-46f2-ad52-19028d3335a1" />
+  <img width="100%" alt="Yeomai Lore 产品介绍" src="docs/ui-light-1.jpg" />
 </p>
 <p align="center">
-  <img width="100%" alt="Yeomai Lore 产品介绍" src="https://github.com/user-attachments/assets/e0c2f8f2-e3f3-4ba5-b6a8-5ac5c3fada25" />
+  <img width="100%" alt="Yeomai Lore 产品介绍" src="docs/ui-light-2.jpg" />
 </p>
 <p align="center">
-  更新日志：https://my.feishu.cn/wiki/UR1Pw2wJyilbg3krQFjceJZEnyi
+  <img width="100%" alt="Yeomai Lore 产品介绍" src="docs/ui-dark-1.jpg" />
 </p>
+<p align="center">
+  <img width="100%" alt="Yeomai Lore 产品介绍" src="docs/ui-dark-2.jpg" />
+</p>
+<p align="center">
+  项目体验 Demo：<a href="https://lore.yelove.yeomai.site">https://lore.yelove.yeomai.site</a>
+</p>
+
+<p align="center">
+  Docker Hub：<a href="https://hub.docker.com/repository/docker/yeomaiyelove/yeomai-lore-web">https://hub.docker.com/repository/docker/yeomaiyelove/yeomai-lore-web</a>
+</p>
+
+<p align="center">
+  更新日志：<a href="https://my.feishu.cn/wiki/UR1Pw2wJyilbg3krQFjceJZEnyi">https://my.feishu.cn/wiki/UR1Pw2wJyilbg3krQFjceJZEnyi</a>
+</p>
+
+- Demo 站点随时可能调整和清理，仅测试使用
 - 如需使用请访问 Docker Hub 并搜索 `yeomaiyelove/yeomai-lore-web`
 
 这是一个面向 [Epic Games Lore](https://github.com/EpicGames/lore) 的自托管 Web 控制平面。当前原型提供内置账户、组织与仓库 ACL、Lore Tier 2 授权、仓库创建、分支与修订历史、文件浏览、下载、文本差异、邀请、API 令牌和审计记录。

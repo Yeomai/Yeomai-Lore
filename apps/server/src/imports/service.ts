@@ -42,6 +42,11 @@ import type { TokenService } from "../auth/token-service.ts";
 import { issueRepositoryToken } from "../auth/repository-auth.ts";
 import { findUserById } from "../auth/users.ts";
 import { audit } from "../auth/audit.ts";
+import {
+  assertPersonalRepositoryQuota,
+  assertRegularUserImportQuota,
+  withUserQuotaLock,
+} from "../user-quota.ts";
 
 const run = promisify(execFile);
 const ZERO_REVISION = "0".repeat(64);
@@ -628,8 +633,14 @@ export class RepositoryImportService {
     }));
   }
 
-  private async checkQuota(_actor: SessionUser): Promise<void> {
-    // Reserved extension point for future per-user import quotas.
+  private async checkQuota(actor: SessionUser): Promise<void> {
+    if (actor.globalRole === "admin") return;
+    await assertPersonalRepositoryQuota({
+      db: this.db,
+      lore: this.lore,
+      tokens: this.tokens,
+      user: actor,
+    });
   }
 
   private async assertQueueCapacity(actor: SessionUser): Promise<void> {
@@ -841,22 +852,38 @@ export class RepositoryImportService {
       );
     }
 
-    const pending = await createPendingRepository(this.db, {
-      organizationId: job.target_organization_id,
-      ownerUserId: job.target_owner_user_id,
-      organizationSlug: job.target_organization_slug,
-      slug: job.target_slug,
-      description: job.target_description,
-      defaultBranchName: defaultBranch,
-      userId: job.actor_user_id,
+    const user = await findUserById(this.db, job.actor_user_id);
+    if (!user) throw new Error("Import owner no longer exists");
+    await assertRegularUserImportQuota(this.db, user, sizeBytes);
+    const createPending = () =>
+      createPendingRepository(this.db, {
+        organizationId: job.target_organization_id,
+        ownerUserId: job.target_owner_user_id,
+        organizationSlug: job.target_organization_slug,
+        slug: job.target_slug,
+        description: job.target_description,
+        defaultBranchName: defaultBranch,
+        userId: job.actor_user_id,
+      });
+    const pending = await withUserQuotaLock(user.id, async () => {
+      if (
+        !job.target_organization_id &&
+        job.target_owner_user_id === user.id
+      ) {
+        await assertPersonalRepositoryQuota({
+          db: this.db,
+          lore: this.lore,
+          tokens: this.tokens,
+          user,
+        });
+      }
+      return createPending();
     });
     await this.db.query(
       `UPDATE repository_imports SET target_repository_id = $2 WHERE id = $1`,
       [job.id, pending.id],
     );
     job.target_repository_id = pending.id;
-    const user = await findUserById(this.db, job.actor_user_id);
-    if (!user) throw new Error("Import owner no longer exists");
     let loginToken = await this.tokens.signLoginToken(user);
     let loginTokenIssuedAt = Date.now();
     await this.lore.createRepository({

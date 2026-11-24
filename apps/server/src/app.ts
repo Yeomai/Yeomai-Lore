@@ -27,6 +27,7 @@ import { registerMetadataRoutes } from "./routes/metadata.ts";
 import { registerImportRoutes } from "./routes/imports.ts";
 import { registerSetupRoutes } from "./routes/setup.ts";
 import { registerSystemRoutes } from "./routes/system.ts";
+import { registerInternalRoutes } from "./routes/internal.ts";
 import type { RepositoryImportService } from "./imports/service.ts";
 import "./types/fastify.d.ts";
 
@@ -48,6 +49,7 @@ export interface AppDependencies {
   ) => Promise<void>;
   serviceReadiness?: () => Promise<boolean>;
   restartLore?: () => Promise<void>;
+  internalGatewaySecret?: string;
   imports?: RepositoryImportService;
   logger?: boolean;
 }
@@ -160,6 +162,9 @@ export async function buildApp(deps: AppDependencies): Promise<FastifyInstance> 
 
   await app.register(registerMetadataRoutes, { prefix: "" });
   await app.register(registerSetupRoutes, { prefix: "/api/v1/setup" });
+  await app.register(registerInternalRoutes, {
+    prefix: "/api/v1/internal",
+  });
   await app.register(registerOAuthRoutes, { prefix: "" });
   await app.register(registerAuthRoutes, { prefix: "/api/v1/auth" });
   await app.register(registerAdminRoutes, { prefix: "/api/v1/admin" });

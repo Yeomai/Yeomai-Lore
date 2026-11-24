@@ -5,8 +5,10 @@ import type { AppConfig } from "../config.ts";
 import {
   isUserInvitationsEnabled,
   isUserRegistrationEnabled,
+  readLoginAnnouncement,
 } from "../settings.ts";
 import { readSiteSettings } from "../setup.ts";
+import { readQuotaSettings } from "../quota-settings.ts";
 
 const execFileAsync = promisify(execFile);
 let loreVersionPromise: Promise<string> | undefined;
@@ -26,6 +28,7 @@ export const registerMetadataRoutes: FastifyPluginAsync = async (app) => {
       app.services.db,
       app.services.config,
     );
+    const quotas = await readQuotaSettings(app.services.db);
     return {
       productName: settings.siteName,
       siteName: settings.siteName,
@@ -36,6 +39,12 @@ export const registerMetadataRoutes: FastifyPluginAsync = async (app) => {
       apiVersion: "v1",
       userRegistrationEnabled: await isUserRegistrationEnabled(app.services.db),
       userInvitationsEnabled: await isUserInvitationsEnabled(app.services.db),
+      loginAnnouncement: await readLoginAnnouncement(app.services.db),
+      regularUserQuotaEnabled: quotas.enabled,
+      regularUserMaxRepositories: quotas.maxRepositories,
+      regularUserMaxSizeBytes: quotas.maxSizeBytes,
+      regularUserImportMaxBytes: quotas.importMaxBytes,
+      regularUserRepositoryCleanupHours: quotas.cleanupHours,
     };
   });
 };

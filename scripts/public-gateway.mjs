@@ -1,8 +1,10 @@
 import dgram from "node:dgram";
+import { readFileSync, unwatchFile, watchFile } from "node:fs";
 import http from "node:http";
 import http2 from "node:http2";
 import net from "node:net";
 import { pathToFileURL } from "node:url";
+import { brotliDecompressSync, gunzipSync, inflateSync } from "node:zlib";
 
 const HTTP2_PREFACE = Buffer.from(
   "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n",
@@ -20,6 +22,7 @@ const HOP_BY_HOP_HEADERS = new Set([
 
 export async function startPublicGateway(options = {}) {
   const config = readGatewayConfig(options);
+  const secure = Boolean(config.tlsCertFile);
   const state = {
     publicServer: null,
     webServer: null,
@@ -27,44 +30,52 @@ export async function startPublicGateway(options = {}) {
     loreSession: null,
     udpSocket: null,
     udpSessions: new Map(),
+    tlsWatchTargets: [],
+    tlsReloadTimer: null,
+    pushQueue: Promise.resolve(),
     closed: false,
   };
 
-  const webServer = http.createServer((request, response) => {
-    proxyHttp1ToWeb(request, response, config);
-  });
-  webServer.on("upgrade", (request, socket, head) => {
-    proxyWebSocket(request, socket, head, config);
-  });
-  webServer.on("clientError", (error, socket) => {
-    console.error("public gateway web client error", error.message);
-    socket.destroy();
-  });
-  await listen(webServer, config.internalHost, 0);
-  state.webServer = webServer;
+  let publicServer;
+  if (secure) {
+    publicServer = createSecureServer(config, state);
+  } else {
+    const webServer = http.createServer((request, response) => {
+      proxyHttp1ToWeb(request, response, config);
+    });
+    webServer.on("upgrade", (request, socket, head) => {
+      proxyWebSocket(request, socket, head, config);
+    });
+    webServer.on("clientError", (error, socket) => {
+      console.error("public gateway web client error", error.message);
+      socket.destroy();
+    });
+    await listen(webServer, config.internalHost, 0);
+    state.webServer = webServer;
 
-  const loreServer = http2.createServer({ settings: { enablePush: false } });
-  loreServer.on("request", (request, response) => {
-    if (isGrpcRequest(request)) {
-      proxyGrpc(request, response, config, state);
-      return;
-    }
-    proxyHttp2ToWeb(request, response, config);
-  });
-  loreServer.on("sessionError", (error) => {
-    console.error("public gateway HTTP/2 session error", error.message);
-  });
-  await listen(loreServer, config.internalHost, 0);
-  state.loreServer = loreServer;
+    const loreServer = http2.createServer({ settings: { enablePush: false } });
+    loreServer.on("request", (request, response) => {
+      if (isGrpcRequest(request)) {
+        proxyGrpc(request, response, config, state);
+        return;
+      }
+      proxyHttp2ToWeb(request, response, config);
+    });
+    loreServer.on("sessionError", (error) => {
+      console.error("public gateway HTTP/2 session error", error.message);
+    });
+    await listen(loreServer, config.internalHost, 0);
+    state.loreServer = loreServer;
 
-  const publicServer = net.createServer({ pauseOnConnect: true }, (socket) => {
-    proxyTransport(
-      socket,
-      webServer.address().port,
-      loreServer.address().port,
-      config,
-    );
-  });
+    publicServer = net.createServer({ pauseOnConnect: true }, (socket) => {
+      proxyTransport(
+        socket,
+        webServer.address().port,
+        loreServer.address().port,
+        config,
+      );
+    });
+  }
   publicServer.on("error", (error) => {
     if (!state.closed) {
       console.error("public gateway TCP listener failed", error);
@@ -86,11 +97,75 @@ export async function startPublicGateway(options = {}) {
     await closeGateway(state);
     throw error;
   }
+  if (secure) {
+    watchTlsCertificate(publicServer, config, state);
+  }
 
   return {
     port: publicPort,
+    secure,
     close: () => closeGateway(state),
   };
+}
+
+function createSecureServer(config, state) {
+  const server = http2.createSecureServer(
+    {
+      allowHTTP1: true,
+      cert: readFileSync(config.tlsCertFile),
+      key: readFileSync(config.tlsKeyFile),
+      settings: { enablePush: false },
+    },
+    (request, response) => {
+      if (isGrpcRequest(request)) {
+        proxyGrpc(request, response, config, state);
+      } else if (request.httpVersionMajor === 1) {
+        proxyHttp1ToWeb(request, response, config);
+      } else {
+        proxyHttp2ToWeb(request, response, config);
+      }
+    },
+  );
+  server.on("upgrade", (request, socket, head) => {
+    proxyWebSocket(request, socket, head, config);
+  });
+  server.on("clientError", (error, socket) => {
+    console.error("public gateway web client error", error.message);
+    socket.destroy();
+  });
+  server.on("sessionError", (error) => {
+    console.error("public gateway HTTP/2 session error", error.message);
+  });
+  server.on("tlsClientError", (error) => {
+    if (!state.closed) {
+      console.error("public gateway TLS client error", error.message);
+    }
+  });
+  return server;
+}
+
+function watchTlsCertificate(server, config, state) {
+  const reload = () => {
+    clearTimeout(state.tlsReloadTimer);
+    state.tlsReloadTimer = setTimeout(() => {
+      try {
+        server.setSecureContext({
+          cert: readFileSync(config.tlsCertFile),
+          key: readFileSync(config.tlsKeyFile),
+        });
+        console.log("Public gateway TLS certificate reloaded");
+      } catch (error) {
+        console.error(
+          "Public gateway TLS certificate reload failed",
+          error.message,
+        );
+      }
+    }, 250);
+  };
+  state.tlsWatchTargets = [config.tlsCertFile, config.tlsKeyFile];
+  for (const file of state.tlsWatchTargets) {
+    watchFile(file, { interval: 1_000 }, reload);
+  }
 }
 
 function readGatewayConfig(options) {
@@ -109,6 +184,20 @@ function readGatewayConfig(options) {
     "127.0.0.1",
     41337,
   );
+  const tlsCertFile =
+    options.tlsCertFile ?? process.env.PUBLIC_GATEWAY_TLS_CERT_FILE;
+  const tlsKeyFile =
+    options.tlsKeyFile ?? process.env.PUBLIC_GATEWAY_TLS_KEY_FILE;
+  if (Boolean(tlsCertFile) !== Boolean(tlsKeyFile)) {
+    throw new Error(
+      "PUBLIC_GATEWAY_TLS_CERT_FILE and PUBLIC_GATEWAY_TLS_KEY_FILE must be set together",
+    );
+  }
+  const api = endpoint(
+    options.apiInternalUrl ?? process.env.API_INTERNAL_URL,
+    "127.0.0.1",
+    4000,
+  );
 
   return {
     publicHost:
@@ -125,8 +214,15 @@ function readGatewayConfig(options) {
       process.env.PUBLIC_GATEWAY_INTERNAL_HOST ??
       "127.0.0.1",
     web,
+    api,
     lore,
     quic,
+    tlsCertFile,
+    tlsKeyFile,
+    pushCheckSecretFile:
+      options.pushCheckSecretFile ??
+      process.env.INTERNAL_GATEWAY_SECRET_FILE ??
+      "data/local/run/gateway-internal-secret",
     udpIdleTimeoutMs: numberOption(
       options.udpIdleTimeoutMs ??
         process.env.PUBLIC_GATEWAY_UDP_IDLE_TIMEOUT_MS,
@@ -235,6 +331,7 @@ function proxyTransport(socket, webPort, lorePort, config) {
 
 function proxyHttp1ToWeb(request, response, config) {
   const headers = transportHeaders(request.headers);
+  if (config.tlsCertFile) headers["x-forwarded-proto"] = "https";
   const upstream = http.request({
     host: config.web.host,
     port: config.web.port,
@@ -271,6 +368,7 @@ function proxyHttp2ToWeb(request, response, config) {
   delete headers[":method"];
   delete headers[":scheme"];
   delete headers[":authority"];
+  if (config.tlsCertFile) headers["x-forwarded-proto"] = "https";
   const upstream = http.request({
     host: config.web.host,
     port: config.web.port,
@@ -299,6 +397,21 @@ function proxyHttp2ToWeb(request, response, config) {
 }
 
 function proxyGrpc(request, response, config, state) {
+  if (isBranchPushRequest(request)) {
+    void enqueueBranchPush(state, () =>
+      proxyQuotaCheckedGrpc(request, response, config, state),
+    ).catch((error) => {
+      console.error("Branch push quota check failed", error);
+      if (!response.headersSent && !response.destroyed) {
+        respondGrpcError(response, 14, "Push authorization failed");
+      }
+    });
+    return;
+  }
+  proxyGrpcToLore(request, response, config, state);
+}
+
+function proxyGrpcToLore(request, response, config, state) {
   const session = getLoreSession(config, state);
   const authority =
     request.authority ??
@@ -343,6 +456,257 @@ function proxyGrpc(request, response, config, state) {
     if (!upstream.writableEnded) upstream.addTrailers(trailers);
   });
   request.pipe(upstream);
+}
+
+async function proxyQuotaCheckedGrpc(request, response, config, state) {
+  const body = await readRequestBody(request, 1024 * 1024);
+  const message = grpcMessage(body, headerValue(request.headers["grpc-encoding"]));
+  const push = branchPushMessage(message);
+  const authorization = headerValue(request.headers.authorization);
+  if (!authorization) {
+    respondGrpcError(response, 16, "Authorization is required");
+    return;
+  }
+
+  let secret;
+  try {
+    secret = readFileSync(config.pushCheckSecretFile, "utf8").trim();
+  } catch {
+    respondGrpcError(response, 14, "Push authorization is unavailable");
+    return;
+  }
+
+  const repositoryId = binaryHeaderBase64(
+    request.headers["urc-repository-id-bin"],
+  );
+  let check;
+  try {
+    check = await fetch(
+      `http://${config.api.host}:${config.api.port}/api/v1/internal/branch-push/check`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-yeomai-internal-secret": secret,
+        },
+        body: JSON.stringify({
+          authorization,
+          ...(repositoryId ? { repositoryId } : {}),
+          branchId: push.branchId.toString("base64"),
+          revisionSignature: push.revisionSignature.toString("hex"),
+          force: push.force,
+          fastForwardMerge: push.fastForwardMerge,
+        }),
+      },
+    );
+  } catch (error) {
+    console.error("Push quota API unavailable", error);
+    respondGrpcError(response, 14, "Push authorization is unavailable");
+    return;
+  }
+
+  if (!check.ok) {
+    const failure = await check.json().catch(() => ({}));
+    const messageText =
+      failure?.error?.message ??
+      failure?.message ??
+      "Repository storage quota exceeded";
+    const status =
+      check.status === 403
+        ? 7
+        : check.status === 404
+          ? 5
+          : check.status === 409
+            ? 8
+            : 14;
+    respondGrpcError(response, status, messageText);
+    return;
+  }
+
+  const session = getLoreSession(config, state);
+  const authority =
+    request.authority ??
+    request.headers[":authority"] ??
+    request.headers.host ??
+    `${config.lore.host}:${config.lore.port}`;
+  const upstream = session.request({
+    ...transportHeaders(request.headers),
+    ":method": request.method,
+    ":path": request.url,
+    ":scheme": request.scheme ?? "http",
+    ":authority": authority,
+  });
+
+  let responded = false;
+  upstream.on("response", (headers) => {
+    responded = true;
+    response.writeHead(
+      Number(headers[":status"] ?? 502),
+      transportHeaders(headers),
+    );
+  });
+  upstream.on("data", (chunk) => {
+    if (!response.write(chunk)) upstream.pause();
+  });
+  response.on("drain", () => upstream.resume());
+  upstream.on("trailers", (trailers) => response.addTrailers(trailers));
+  upstream.on("end", () => response.end());
+  upstream.on("error", (error) => {
+    if (!responded && !response.headersSent) {
+      respondGrpcError(response, 14, "Lore upstream unavailable");
+      return;
+    }
+    response.destroy(error);
+  });
+  upstream.end(body);
+}
+
+function enqueueBranchPush(state, work) {
+  const current = state.pushQueue.then(work, work);
+  state.pushQueue = current.catch(() => {});
+  return current;
+}
+
+function isBranchPushRequest(request) {
+  return (
+    request.method === "POST" &&
+    typeof request.url === "string" &&
+    request.url.endsWith("/BranchPush") &&
+    /^\/(?:lore\.revision\.v1\.RevisionService|urc\.rpc\.RevisionService)\/BranchPush$/.test(
+      request.url,
+    )
+  );
+}
+
+function readRequestBody(request, limit) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > limit) {
+        reject(new Error("gRPC request is too large"));
+        request.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    request.on("end", () => resolve(Buffer.concat(chunks)));
+    request.on("error", reject);
+  });
+}
+
+function grpcMessage(body, encoding) {
+  if (body.length < 5) throw new Error("Invalid gRPC request frame");
+  const compressed = body[0] === 1;
+  if (body[0] !== 0 && !compressed) {
+    throw new Error("Invalid gRPC compression flag");
+  }
+  const length = body.readUInt32BE(1);
+  if (length !== body.length - 5) {
+    throw new Error("Invalid gRPC request length");
+  }
+  const message = body.subarray(5);
+  if (!compressed) return message;
+  switch (String(encoding ?? "").toLowerCase()) {
+    case "gzip":
+    case "x-gzip":
+      return gunzipSync(message);
+    case "deflate":
+      return inflateSync(message);
+    case "br":
+      return brotliDecompressSync(message);
+    default:
+      throw new Error("Unsupported gRPC compression");
+  }
+}
+
+function branchPushMessage(message) {
+  let offset = 0;
+  let branchId = Buffer.alloc(0);
+  let revisionSignature = Buffer.alloc(0);
+  let force = false;
+  let fastForwardMerge = false;
+  while (offset < message.length) {
+    const key = readVarint(message, offset);
+    offset = key.offset;
+    const field = key.value >>> 3;
+    const wireType = key.value & 7;
+    if (field === 1 || field === 2) {
+      if (wireType !== 2) throw new Error("Invalid BranchPush message");
+      const length = readVarint(message, offset);
+      offset = length.offset;
+      const end = offset + length.value;
+      if (end > message.length) throw new Error("Invalid BranchPush message");
+      const value = message.subarray(offset, end);
+      offset = end;
+      if (field === 1) branchId = Buffer.from(value);
+      if (field === 2) revisionSignature = Buffer.from(value);
+      continue;
+    }
+    if (field === 3 || field === 4) {
+      if (wireType !== 0) throw new Error("Invalid BranchPush message");
+      const value = readVarint(message, offset);
+      offset = value.offset;
+      if (field === 3) force = value.value !== 0;
+      if (field === 4) fastForwardMerge = value.value !== 0;
+      continue;
+    }
+    offset = skipProtobufField(message, offset, wireType);
+  }
+  if (branchId.length !== 16 || revisionSignature.length !== 32) {
+    throw new Error("Invalid BranchPush identifiers");
+  }
+  return { branchId, revisionSignature, force, fastForwardMerge };
+}
+
+function readVarint(buffer, offset) {
+  let value = 0;
+  let shift = 0;
+  for (let index = 0; index < 10; index++) {
+    if (offset >= buffer.length) throw new Error("Truncated protobuf varint");
+    const byte = buffer[offset++];
+    value += (byte & 0x7f) * 2 ** shift;
+    if ((byte & 0x80) === 0) return { value, offset };
+    shift += 7;
+  }
+  throw new Error("Invalid protobuf varint");
+}
+
+function skipProtobufField(buffer, offset, wireType) {
+  if (wireType === 0) return readVarint(buffer, offset).offset;
+  if (wireType === 1) return offset + 8;
+  if (wireType === 2) {
+    const length = readVarint(buffer, offset);
+    return length.offset + length.value;
+  }
+  if (wireType === 5) return offset + 4;
+  throw new Error("Unsupported protobuf wire type");
+}
+
+function headerValue(value) {
+  if (Array.isArray(value)) return String(value[0] ?? "");
+  return value === undefined ? "" : String(value);
+}
+
+function binaryHeaderBase64(value) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  if (Buffer.isBuffer(raw)) return raw.toString("base64");
+  if (raw instanceof Uint8Array) return Buffer.from(raw).toString("base64");
+  return "";
+}
+
+function respondGrpcError(response, code, message) {
+  if (response.destroyed || response.headersSent) {
+    response.destroy();
+    return;
+  }
+  response.writeHead(200, {
+    "content-type": "application/grpc",
+    "grpc-status": String(code),
+    "grpc-message": encodeURIComponent(message),
+  });
+  response.end();
 }
 
 function getLoreSession(config, state) {
@@ -476,6 +840,10 @@ function bindUdp(socket, port, host) {
 async function closeGateway(state) {
   if (state.closed) return;
   state.closed = true;
+  clearTimeout(state.tlsReloadTimer);
+  for (const file of state.tlsWatchTargets) {
+    unwatchFile(file);
+  }
 
   await Promise.all(
     [state.publicServer, state.webServer, state.loreServer]
@@ -499,8 +867,10 @@ async function closeGateway(state) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startPublicGateway()
-    .then(({ port }) => {
-      console.log(`Public gateway listening on ${port}/TCP and ${port}/UDP`);
+    .then(({ port, secure }) => {
+      console.log(
+        `Public gateway listening on ${port}/TCP (${secure ? "https" : "http"}) and ${port}/UDP`,
+      );
     })
     .catch((error) => {
       console.error("Public gateway failed to start", error);

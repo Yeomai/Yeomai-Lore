@@ -25,6 +25,7 @@ import { RepositoryImportPanel } from "../../components/RepositoryImportPanel";
 import { RevokeInvitationButton } from "../../components/RevokeInvitationButton";
 import { CopyButton } from "../../components/CopyButton";
 import { BrowserTimeText } from "../../components/BrowserTime";
+import { formatLoreAddress } from "../../lib/lore-url";
 import {
   AuditPanel,
   type AuditEvent,
@@ -86,11 +87,12 @@ interface RepositoryWithGrants extends AccessibleRepository {
 }
 
 interface SystemInfo {
+  deploymentMode?: "local" | "ip" | "domain";
   webPublicUrl: string;
   lorePublicUrl: string;
-  loreReady: boolean;
-  loreStoreMaxSizeBytes: number;
-  loreStoreCompactionDelayMs: number;
+  loreReady?: boolean;
+  loreStoreMaxSizeBytes?: number;
+  loreStoreCompactionDelayMs?: number;
 }
 
 interface ImportJob {
@@ -148,6 +150,7 @@ const personalSections = new Set<AdminSection>([
   "oauthIdentities",
   "repositories",
   "imports",
+  "systemInfo",
 ]);
 
 export default async function AdminPage({
@@ -160,6 +163,7 @@ export default async function AdminPage({
   const { locale, messages } = await getI18n();
   const meta = await serverApi<{
     webPublicUrl: string;
+    loreRemoteUrl: string;
     userInvitationsEnabled: boolean;
     loreVersion: string;
   }>("/api/v1/meta");
@@ -259,13 +263,24 @@ export default async function AdminPage({
       ? await serverApi<{
           userRegistrationEnabled: boolean;
           userInvitationsEnabled: boolean;
+          regularUserQuotaEnabled: boolean;
+          regularUserMaxRepositories: number;
+          regularUserMaxSizeBytes: number;
+          regularUserImportMaxBytes: number;
+          regularUserRepositoryCleanupHours: number;
+          loginAnnouncement: string;
         }>(
           "/api/v1/admin/settings",
         )
       : null;
   const systemInfo =
     section === "systemInfo"
-      ? await serverApi<SystemInfo>("/api/v1/admin/system-info")
+      ? isAdmin
+        ? await serverApi<SystemInfo>("/api/v1/admin/system-info")
+        : {
+            webPublicUrl: meta.webPublicUrl,
+            lorePublicUrl: meta.loreRemoteUrl,
+          }
       : null;
   const smtpSettings =
     section === "smtp"
@@ -361,13 +376,32 @@ export default async function AdminPage({
               userInvitationsEnabled={
                 systemSettings?.userInvitationsEnabled ?? false
               }
+              regularUserQuotaEnabled={
+                systemSettings?.regularUserQuotaEnabled ?? false
+              }
+              regularUserMaxRepositories={
+                systemSettings?.regularUserMaxRepositories ?? 1
+              }
+              regularUserMaxSizeBytes={
+                systemSettings?.regularUserMaxSizeBytes ?? 5 * 1024 * 1024
+              }
+              regularUserImportMaxBytes={
+                systemSettings?.regularUserImportMaxBytes ?? 5 * 1024 * 1024
+              }
+              regularUserRepositoryCleanupHours={
+                systemSettings?.regularUserRepositoryCleanupHours ?? 24
+              }
+              loginAnnouncement={systemSettings?.loginAnnouncement ?? ""}
               loreVersion={meta.loreVersion}
             />
           ) : null}
           {section === "certificate" && certificateSettings ? (
             <>
               <CertificateSettingsForm settings={certificateSettings} />
-              <TransportSecurityNote messages={messages} />
+              <TransportSecurityNote
+                messages={messages}
+                deploymentMode={certificateSettings.deploymentMode}
+              />
             </>
           ) : null}
           {section === "smtp" && smtpSettings ? (
@@ -395,6 +429,7 @@ export default async function AdminPage({
               info={systemInfo}
               messages={messages}
               locale={locale}
+              isAdmin={isAdmin}
             />
           ) : null}
         </div>
@@ -450,18 +485,18 @@ function AdminSidebar({
           : []),
       ],
     },
-    ...(isAdmin
-      ? [
-          {
-            title: m.systemGroup,
-            items: [
+    {
+      title: m.systemGroup,
+      items: [
+        ...(isAdmin
+          ? [
               { id: "settings" as const, label: m.settings },
               { id: "audit" as const, label: m.audit },
-              { id: "systemInfo" as const, label: m.systemInfo },
-            ],
-          },
-        ]
-      : []),
+            ]
+          : []),
+        { id: "systemInfo" as const, label: m.systemInfo },
+      ],
+    },
   ];
   return (
     <aside className="panel admin-sidebar">
@@ -489,30 +524,62 @@ function SystemInfoPanel({
   info,
   messages,
   locale,
+  isAdmin,
 }: {
   info: SystemInfo;
   messages: Messages;
   locale: string;
+  isAdmin: boolean;
 }) {
   const m = messages.admin;
   const number = new Intl.NumberFormat(locale);
   const decimal = new Intl.NumberFormat(locale, {
     maximumFractionDigits: 1,
   });
+  const deploymentModes = [
+    ["local", m.deploymentLocal],
+    ["ip", m.deploymentIp],
+    ["domain", m.deploymentDomain],
+  ] as const;
   return (
     <section className="panel">
       <div className="system-info-scroll">
         <dl className="profile-details system-info-list">
-          <div>
-            <dt>{m.serverStatus}</dt>
-            <dd>
-              <span
-                className={`badge ${info.loreReady ? "status-active" : "status-failed"}`}
-              >
-                {info.loreReady ? m.serverReady : m.serverUnavailable}
-              </span>
-            </dd>
-          </div>
+          {isAdmin ? (
+            <>
+              <div>
+                <dt>{m.serverStatus}</dt>
+                <dd>
+                  <span
+                    className={`badge ${info.loreReady ? "status-active" : "status-failed"}`}
+                  >
+                    {info.loreReady ? m.serverReady : m.serverUnavailable}
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt>{m.deploymentMode}</dt>
+                <dd className="system-deployment-options">
+                  {deploymentModes.map(([mode, label]) => {
+                    const selected = info.deploymentMode === mode;
+                    return (
+                      <div
+                        aria-current={selected ? "true" : undefined}
+                        className={
+                          selected
+                            ? "system-deployment-option is-selected"
+                            : "system-deployment-option"
+                        }
+                        key={mode}
+                      >
+                        <span>{label}</span>
+                      </div>
+                    );
+                  })}
+                </dd>
+              </div>
+            </>
+          ) : null}
           <div>
             <dt>{m.webManagementAddress}</dt>
             <dd>
@@ -522,72 +589,119 @@ function SystemInfoPanel({
           <div>
             <dt>{m.loreServiceAddress}</dt>
             <dd>
-              <code>{info.lorePublicUrl}</code>
+              <code>{formatLoreAddress(info.lorePublicUrl)}</code>
             </dd>
           </div>
-          <div>
-            <dt>{m.gcTriggerThreshold}</dt>
-            <dd>
-              <code>
-                {formatMessage(m.gcTriggerThresholdValue, {
-                  size: `${decimal.format(
-                    info.loreStoreMaxSizeBytes / 1024 ** 3,
-                  )} GiB`,
-                  bytes: number.format(info.loreStoreMaxSizeBytes),
-                })}
-              </code>
-            </dd>
-          </div>
-          <div>
-            <dt>{m.automaticGcInterval}</dt>
-            <dd>
-              <code>
-                {formatMessage(m.automaticGcIntervalValue, {
-                  hours: decimal.format(
-                    info.loreStoreCompactionDelayMs / 3_600_000,
-                  ),
-                  milliseconds: number.format(
-                    info.loreStoreCompactionDelayMs,
-                  ),
-                })}
-              </code>
-            </dd>
-          </div>
+          {isAdmin ? (
+            <>
+              <div>
+                <dt>{m.gcTriggerThreshold}</dt>
+                <dd>
+                  <code>
+                    {formatMessage(m.gcTriggerThresholdValue, {
+                      size: `${decimal.format(
+                        info.loreStoreMaxSizeBytes! / 1024 ** 3,
+                      )} GiB`,
+                      bytes: number.format(info.loreStoreMaxSizeBytes!),
+                    })}
+                  </code>
+                </dd>
+              </div>
+              <div>
+                <dt>{m.automaticGcInterval}</dt>
+                <dd>
+                  <code>
+                    {formatMessage(m.automaticGcIntervalValue, {
+                      hours: decimal.format(
+                        info.loreStoreCompactionDelayMs! / 3_600_000,
+                      ),
+                      milliseconds: number.format(
+                        info.loreStoreCompactionDelayMs!,
+                      ),
+                    })}
+                  </code>
+                </dd>
+              </div>
+            </>
+          ) : null}
         </dl>
       </div>
     </section>
   );
 }
 
-function TransportSecurityNote({ messages }: { messages: Messages }) {
+function TransportSecurityNote({
+  messages,
+  deploymentMode,
+}: {
+  messages: Messages;
+  deploymentMode: "local" | "ip" | "domain";
+}) {
   const m = messages.admin;
+  const modes = [
+    {
+      id: "local" as const,
+      title: m.deploymentLocal,
+      description: m.transportLocalDescription,
+      addresses: `http://localhost:3000
+lore://localhost:3000`,
+    },
+    {
+      id: "ip" as const,
+      title: m.deploymentIp,
+      description: m.transportIpDescription,
+      addresses: `https://<IP>:3000
+lores://<IP>:3000`,
+    },
+    {
+      id: "domain" as const,
+      title: m.deploymentDomain,
+      description: m.transportDomainDescription,
+      addresses: `https://lore.example.com:3000
+lores://lore.example.com:3000`,
+    },
+  ];
   return (
     <aside className="system-transport-note">
       <h3>{m.transportSecurityTitle}</h3>
       <p>{m.transportSecurityNote}</p>
-      <div className="system-transport-examples">
-        <section>
-          <h4>{m.transportSecurityAllowed}</h4>
-          <pre>
-            <code>{`http://localhost:3000
-http://127.0.0.1:3000
-http://127.0.0.2:3000
-http://[::1]:3000`}</code>
-          </pre>
-        </section>
-        <section>
-          <h4>{m.transportSecurityDenied}</h4>
-          <pre>
-            <code>{`http://192.168.1.10:3000
-http://lore.intra.company.com`}</code>
-          </pre>
-        </section>
-      </div>
-      <div className="system-transport-dns-note">
-        <p>{m.transportSecurityDnsRecommendation}</p>
-        <pre>
-          <code>lore.example.com-&gt; 192.168.x.x</code>
-        </pre>
+      <div className="system-transport-cards">
+        {modes.map((mode) => (
+          <section
+            className={
+              deploymentMode === mode.id
+                ? "system-transport-mode is-current"
+                : "system-transport-mode"
+            }
+            key={mode.id}
+          >
+            <div className="system-transport-mode-heading">
+              <span>{mode.title}</span>
+              {deploymentMode === mode.id ? (
+                <span className="badge status-active">{m.transportCurrent}</span>
+              ) : null}
+            </div>
+            <div className="system-transport-mode-content">
+              <p>{mode.description}</p>
+              <pre>
+                <code>{mode.addresses}</code>
+              </pre>
+              {mode.id === "ip" ? (
+                <div className="system-transport-local-access">
+                  <h5>{m.transportIpLocalTitle}</h5>
+                  <p>{m.transportIpLocalDescription}</p>
+                  <pre>
+                    <code>{`https://localhost:3000
+lores://localhost:3000`}</code>
+                  </pre>
+                  <p className="system-transport-local-note">
+                    {m.transportIpLocalNote}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          </section>
+        ))}
       </div>
     </aside>
   );

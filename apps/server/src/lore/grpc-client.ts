@@ -331,6 +331,38 @@ export class GrpcLoreClient implements LoreClient {
     };
   }
 
+  async getRevisionSize(input: {
+    repositoryId: string;
+    revisionSignature: string;
+    token: string;
+  }): Promise<number> {
+    if (!/^[0-9a-f]{64}$/i.test(input.revisionSignature)) {
+      throw new AppError(
+        "bad_request",
+        400,
+        "Invalid revision signature",
+      );
+    }
+    const stream = this.thinClient.revisionTree!(
+      {
+        signature: Buffer.from(input.revisionSignature, "hex"),
+        maxDepth: 1,
+        includeLastRevision: false,
+      },
+      metadataFor(input.token, input.repositoryId),
+    );
+    let sizeBytes = 0;
+    let found = false;
+    for await (const value of stream as AsyncIterable<any>) {
+      if (value.header) found = true;
+      if (value.node) sizeBytes += Number(value.node.size);
+    }
+    if (!found) {
+      throw notFound("Revision not found");
+    }
+    return sizeBytes;
+  }
+
   async listBranches(
     repositoryId: string,
     token: string,

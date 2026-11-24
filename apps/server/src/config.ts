@@ -44,9 +44,13 @@ const envSchema = z.object({
   LORE_IMPORT_WORK_DIR: z.string().default("data/local/imports"),
   LORE_IMPORT_MAX_SOURCE_BYTES: z.coerce.number().int().nonnegative().default(0),
   LORE_IMPORT_GIT_USERNAME: z.string().min(1).default("oauth2"),
+  INTERNAL_GATEWAY_SECRET_FILE: z
+    .string()
+    .default("./data/local/run/gateway-internal-secret"),
   GIT_PATH: z.string().default("git"),
   LORE_TLS: booleanFromEnv,
   LORE_CA_FILE: z.string().optional(),
+  LORE_CA_KEY_FILE: z.string().optional(),
   LORE_AUDIENCE: z.string().default("lore-portal"),
   GRPC_HOST: z.string().default("0.0.0.0"),
   GRPC_PORT: z.coerce.number().int().positive().default(50051),
@@ -94,9 +98,11 @@ export interface AppConfig {
   loreImportWorkDir: string;
   loreImportMaxSourceBytes: number;
   loreImportGitUsername: string;
+  internalGatewaySecretFile: string;
   gitPath: string;
   loreTls: boolean;
   loreCaFile: string | undefined;
+  loreCaKeyFile: string | undefined;
   loreAudience: string;
   grpcHost: string;
   grpcPort: number;
@@ -157,10 +163,16 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     loreImportWorkDir: resolveProjectPath(parsed.LORE_IMPORT_WORK_DIR),
     loreImportMaxSourceBytes: parsed.LORE_IMPORT_MAX_SOURCE_BYTES,
     loreImportGitUsername: parsed.LORE_IMPORT_GIT_USERNAME,
+    internalGatewaySecretFile: resolveProjectPath(
+      parsed.INTERNAL_GATEWAY_SECRET_FILE,
+    ),
     gitPath: parsed.GIT_PATH,
     loreTls: parsed.LORE_TLS,
     loreCaFile: parsed.LORE_CA_FILE
       ? resolveProjectPath(parsed.LORE_CA_FILE)
+      : undefined,
+    loreCaKeyFile: parsed.LORE_CA_KEY_FILE
+      ? resolveProjectPath(parsed.LORE_CA_KEY_FILE)
       : undefined,
     loreAudience: parsed.LORE_AUDIENCE,
     grpcHost: parsed.GRPC_HOST,

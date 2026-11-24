@@ -5,7 +5,7 @@ The application and bundled Lore versions are declared in
 
 ```json
 {
-  "version": "1.1.6",
+  "version": "1.1.7",
   "loreVersion": "0.14.0",
   "internalBuild": 18,
   "builtAt": "2026-11-18 13:09"
@@ -25,7 +25,7 @@ This file is the version source of truth. The sync command updates:
 ## Set a release version
 
 ```bash
-pnpm version:set 1.1.6
+pnpm version:set 1.1.7
 ```
 
 When upgrading the bundled official Lore version, provide it as the second

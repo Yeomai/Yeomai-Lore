@@ -2,6 +2,7 @@ import type { QueryExecutor } from "./db/index.ts";
 
 export const USER_REGISTRATION_ENABLED = "user_registration_enabled";
 export const USER_INVITATIONS_ENABLED = "user_invitations_enabled";
+export const LOGIN_ANNOUNCEMENT = "login_announcement";
 
 export async function setSystemSetting(
   db: QueryExecutor,
@@ -57,4 +58,21 @@ export async function setUserInvitationsEnabled(
     USER_INVITATIONS_ENABLED,
     enabled ? "true" : "false",
   );
+}
+
+export async function readLoginAnnouncement(
+  db: QueryExecutor,
+): Promise<string> {
+  const result = await db.query<{ value: string }>(
+    "SELECT value FROM system_settings WHERE key = $1",
+    [LOGIN_ANNOUNCEMENT],
+  );
+  return result.rows[0]?.value ?? "";
+}
+
+export async function writeLoginAnnouncement(
+  db: QueryExecutor,
+  announcement: string,
+): Promise<void> {
+  await setSystemSetting(db, LOGIN_ANNOUNCEMENT, announcement);
 }

@@ -13,7 +13,7 @@ describe("unified site address migration", () => {
       "https://lore-web.example.com",
       "lores://lore-server.example.com",
       "https://lore-server.example.com",
-      "lores://lore-server.example.com:443",
+      "lores://lore-server.example.com",
     ],
     [
       "https://lore.example.com:8443",
@@ -133,13 +133,13 @@ describe("unified site address migration", () => {
       await db.query(
         `INSERT INTO system_settings (key, value, updated_at)
          VALUES ('web_public_url', 'https://lore-web.example.com', CURRENT_TIMESTAMP),
-                ('lore_public_url', 'lores://lore-web.example.com:443', CURRENT_TIMESTAMP),
+                ('lore_public_url', 'lores://lore-web.example.com', CURRENT_TIMESTAMP),
                 ('legacy_lore_public_url', 'lores://lore-server.example.com', CURRENT_TIMESTAMP)`,
       );
 
       await expect(migrateLegacyUnifiedAddress(db)).resolves.toMatchObject({
         webPublicUrl: "https://lore-server.example.com",
-        lorePublicUrl: "lores://lore-server.example.com:443",
+        lorePublicUrl: "lores://lore-server.example.com",
       });
       const values = await db.query<{ key: string; value: string }>(
         `SELECT key, value FROM system_settings
@@ -149,7 +149,7 @@ describe("unified site address migration", () => {
       expect(values.rows).toEqual([
         {
           key: "lore_public_url",
-          value: "lores://lore-server.example.com:443",
+          value: "lores://lore-server.example.com",
         },
         {
           key: "web_public_url",

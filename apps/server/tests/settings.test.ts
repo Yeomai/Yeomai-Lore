@@ -66,6 +66,12 @@ describe("system settings", () => {
       expect(initial.json()).toEqual({
         userRegistrationEnabled: true,
         userInvitationsEnabled: false,
+        regularUserQuotaEnabled: false,
+        regularUserMaxRepositories: 1,
+        regularUserMaxSizeBytes: 5 * 1024 * 1024,
+        regularUserImportMaxBytes: 5 * 1024 * 1024,
+        regularUserRepositoryCleanupHours: 24,
+        loginAnnouncement: "",
       });
 
       const systemInfo = await app.inject({
@@ -75,6 +81,7 @@ describe("system settings", () => {
       });
       expect(systemInfo.statusCode).toBe(200);
       expect(systemInfo.json()).toEqual({
+        deploymentMode: "local",
         webPublicUrl: "http://localhost:3000",
         lorePublicUrl: "lore://localhost:3000",
         loreReady: true,
@@ -179,17 +186,25 @@ compaction_delay = 86400000
         payload: {
           userRegistrationEnabled: false,
           userInvitationsEnabled: false,
+          regularUserQuotaEnabled: false,
+          regularUserMaxRepositories: 1,
+          regularUserMaxSizeBytes: 5 * 1024 * 1024,
+          regularUserImportMaxBytes: 5 * 1024 * 1024,
+          regularUserRepositoryCleanupHours: 24,
+          loginAnnouncement: "Scheduled maintenance at 22:00.",
         },
       });
       expect(disabled.statusCode).toBe(200);
-      expect(
-        (
-          await app.inject({
-            method: "GET",
-            url: "/api/v1/meta",
-          })
-        ).json().userRegistrationEnabled,
-      ).toBe(false);
+      const publicMeta = (
+        await app.inject({
+          method: "GET",
+          url: "/api/v1/meta",
+        })
+      ).json();
+      expect(publicMeta.userRegistrationEnabled).toBe(false);
+      expect(publicMeta.loginAnnouncement).toBe(
+        "Scheduled maintenance at 22:00.",
+      );
 
       const rejected = await app.inject({
         method: "POST",
@@ -212,6 +227,12 @@ compaction_delay = 86400000
         payload: {
           userRegistrationEnabled: true,
           userInvitationsEnabled: false,
+          regularUserQuotaEnabled: false,
+          regularUserMaxRepositories: 1,
+          regularUserMaxSizeBytes: 5 * 1024 * 1024,
+          regularUserImportMaxBytes: 5 * 1024 * 1024,
+          regularUserRepositoryCleanupHours: 24,
+          loginAnnouncement: "Scheduled maintenance at 22:00.",
         },
       });
       expect(enabled.statusCode).toBe(200);

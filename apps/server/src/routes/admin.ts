@@ -1,5 +1,8 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { X509Certificate } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { isIP } from "node:net";
 import {
   badRequest,
   conflict,
@@ -27,11 +30,15 @@ import {
 import {
   isUserInvitationsEnabled,
   isUserRegistrationEnabled,
+  readLoginAnnouncement,
   setUserInvitationsEnabled,
   setUserRegistrationEnabled,
+  writeLoginAnnouncement,
 } from "../settings.ts";
 import {
+  deploymentModeForAddress,
   loreCertificateRequired,
+  issueLoreIpCertificate,
   readLoreCertificateStatus,
   readLoreStoreGcConfig,
   readSiteSettings,
@@ -48,6 +55,10 @@ import {
   smtpSettingsSchema,
   type SmtpSettings,
 } from "../mail-settings.ts";
+import {
+  readQuotaSettings,
+  writeQuotaSettings,
+} from "../quota-settings.ts";
 
 const inviteSchema = z.object({
   email: z.string().email(),
@@ -62,10 +73,19 @@ const inviteParamsSchema = z.object({
 const systemSettingsSchema = z.object({
   userRegistrationEnabled: z.boolean(),
   userInvitationsEnabled: z.boolean(),
+  regularUserQuotaEnabled: z.boolean(),
+  regularUserMaxRepositories: z.number().int().nonnegative(),
+  regularUserMaxSizeBytes: z.number().int().nonnegative(),
+  regularUserImportMaxBytes: z.number().int().nonnegative(),
+  regularUserRepositoryCleanupHours: z.number().int().nonnegative(),
+  loginAnnouncement: z.string().trim().max(2000).default(""),
 });
 const certificateSchema = z.object({
   certificateChain: z.string().trim().min(1).max(131_072),
   privateKey: z.string().trim().min(1).max(131_072),
+});
+const ipCertificateSchema = z.object({
+  ipAddresses: z.array(z.string().trim().min(1).max(64)).max(16),
 });
 
 export const registerAdminRoutes: FastifyPluginAsync = async (app) => {
@@ -92,9 +112,16 @@ export const registerAdminRoutes: FastifyPluginAsync = async (app) => {
 
   app.get("/settings", async (request) => {
     await requireAdmin(request);
+    const quotas = await readQuotaSettings(db);
     return {
       userRegistrationEnabled: await isUserRegistrationEnabled(db),
       userInvitationsEnabled: await isUserInvitationsEnabled(db),
+      regularUserQuotaEnabled: quotas.enabled,
+      regularUserMaxRepositories: quotas.maxRepositories,
+      regularUserMaxSizeBytes: quotas.maxSizeBytes,
+      regularUserImportMaxBytes: quotas.importMaxBytes,
+      regularUserRepositoryCleanupHours: quotas.cleanupHours,
+      loginAnnouncement: await readLoginAnnouncement(db),
     };
   });
 
@@ -103,6 +130,7 @@ export const registerAdminRoutes: FastifyPluginAsync = async (app) => {
     const settings = await readSiteSettings(db, config);
     const storeGc = await readLoreStoreGcConfig(config.loreRuntimeConfigPath);
     return {
+      deploymentMode: deploymentModeForAddress(settings.webPublicUrl),
       webPublicUrl: settings.webPublicUrl,
       lorePublicUrl: settings.lorePublicUrl,
       loreReady: await (app.services.serviceReadiness?.() ?? true),
@@ -115,14 +143,108 @@ export const registerAdminRoutes: FastifyPluginAsync = async (app) => {
     await requireAdmin(request);
     const settings = await readSiteSettings(db, config);
     const required = loreCertificateRequired(settings.lorePublicUrl);
+    const loreHost = new URL(settings.lorePublicUrl).hostname.replace(
+      /^\[|\]$/g,
+      "",
+    );
+    const certificate = await readLoreCertificateStatus(config);
+    const siteIpAddress = isIP(loreHost) > 0 ? loreHost : null;
     return {
       lorePublicUrl: settings.lorePublicUrl,
+      deploymentMode: deploymentModeForAddress(settings.webPublicUrl),
       required,
-      certificate: required
-        ? await readLoreCertificateStatus(config)
-        : null,
+      caAvailable: Boolean(config.loreCaFile),
+      ipIssuanceAvailable: Boolean(
+        config.loreCaKeyFile && isIP(loreHost) > 0,
+      ),
+      siteIpAddress,
+      additionalIpAddresses:
+        certificate.ipAddresses.filter(
+          (address) => address !== siteIpAddress,
+        ),
+      certificate,
     };
   });
+
+  app.get(
+    "/certificate/ca",
+    {
+      config: { rateLimit: { max: 10, timeWindow: "5 minutes" } },
+    },
+    async (request, reply) => {
+      const admin = await requireAdmin(request);
+      if (!config.loreCaFile) {
+        throw notFound("Root CA certificate is not configured");
+      }
+      const certificate = await readFile(config.loreCaFile, "utf8").catch(
+        () => null,
+      );
+      if (!certificate) {
+        throw notFound("Root CA certificate is unavailable");
+      }
+      try {
+        new X509Certificate(certificate);
+      } catch {
+        throw badRequest("Root CA certificate is invalid");
+      }
+      await audit(db, {
+        actorUserId: admin.id,
+        action: "admin.ca_certificate_downloaded",
+        targetType: "lore_ca_certificate",
+        targetId: "root-ca",
+        metadata: {},
+        ip: request.ip,
+      });
+      return reply
+        .header("content-type", "application/x-pem-file")
+        .header(
+          "content-disposition",
+          'attachment; filename="Yeomai-Lore-CA.crt"',
+        )
+        .send(certificate);
+    },
+  );
+
+  app.post(
+    "/certificate/ips",
+    {
+      config: { rateLimit: { max: 3, timeWindow: "10 minutes" } },
+    },
+    async (request) => {
+      const admin = await requireAdmin(request);
+      const input = parseInput(ipCertificateSchema, request.body);
+      const issued = await issueLoreIpCertificate(
+        config,
+        input.ipAddresses,
+      );
+      const siteIpAddress = new URL(config.lorePublicUrl).hostname.replace(
+        /^\[|\]$/g,
+        "",
+      );
+      await writeLoreCertificate(
+        config,
+        issued.certificateChain,
+        issued.privateKey,
+      );
+      await audit(db, {
+        actorUserId: admin.id,
+        action: "admin.certificate_ips_updated",
+        targetType: "lore_certificate",
+        targetId: config.lorePublicUrl,
+        metadata: { ipAddresses: issued.ipAddresses },
+        ip: request.ip,
+      });
+      return {
+        ok: true,
+        ipAddresses: issued.ipAddresses,
+        siteIpAddress,
+        additionalIpAddresses: issued.ipAddresses.filter(
+          (address) => address !== siteIpAddress,
+        ),
+        certificate: await readLoreCertificateStatus(config),
+      };
+    },
+  );
 
   app.put(
     "/certificate",
@@ -252,6 +374,14 @@ export const registerAdminRoutes: FastifyPluginAsync = async (app) => {
     const input = parseInput(systemSettingsSchema, request.body);
     await setUserRegistrationEnabled(db, input.userRegistrationEnabled);
     await setUserInvitationsEnabled(db, input.userInvitationsEnabled);
+    await writeLoginAnnouncement(db, input.loginAnnouncement);
+    await writeQuotaSettings(db, {
+      enabled: input.regularUserQuotaEnabled,
+      maxRepositories: input.regularUserMaxRepositories,
+      maxSizeBytes: input.regularUserMaxSizeBytes,
+      importMaxBytes: input.regularUserImportMaxBytes,
+      cleanupHours: input.regularUserRepositoryCleanupHours,
+    });
     await audit(db, {
       actorUserId: admin.id,
       action: "system.settings_updated",
@@ -260,6 +390,12 @@ export const registerAdminRoutes: FastifyPluginAsync = async (app) => {
       metadata: {
         userRegistrationEnabled: input.userRegistrationEnabled,
         userInvitationsEnabled: input.userInvitationsEnabled,
+        regularUserQuotaEnabled: input.regularUserQuotaEnabled,
+        regularUserMaxRepositories: input.regularUserMaxRepositories,
+        regularUserMaxSizeBytes: input.regularUserMaxSizeBytes,
+        regularUserImportMaxBytes: input.regularUserImportMaxBytes,
+        regularUserRepositoryCleanupHours:
+          input.regularUserRepositoryCleanupHours,
       },
       ip: request.ip,
     });

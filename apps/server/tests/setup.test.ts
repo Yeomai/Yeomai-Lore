@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { X509Certificate } from "node:crypto";
 import {
   mkdirSync,
   mkdtempSync,
@@ -16,6 +17,7 @@ import { loadConfig } from "../src/config.ts";
 import { createDatabase } from "../src/db/index.ts";
 import { migrate } from "../src/db/migrate.ts";
 import {
+  deploymentModeForAddress,
   isLocalOrCommonLanHost,
   loreCertificateRequired,
   normalizeLorePublicUrl,
@@ -101,7 +103,17 @@ describe("first-run setup", () => {
         ok: true,
         restartRequired: false,
       });
-      expect(completed.headers["set-cookie"]).toContain("lore_portal_session=");
+      expect(completed.headers["set-cookie"]).toBeUndefined();
+      const login = await app.inject({
+        method: "POST",
+        url: "/api/v1/auth/login",
+        payload: {
+          identifier: "admin",
+          password: "123456",
+        },
+      });
+      expect(login.statusCode).toBe(200);
+      expect(login.headers["set-cookie"]).toContain("lore_portal_session=");
 
       const user = await db.query<{
         username: string;
@@ -232,9 +244,100 @@ compaction_delay = 86400000
       rmSync(directory, { recursive: true, force: true });
     }
   });
+
+  it("issues a local-CA certificate for an IP address without an upload", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "lore-ip-setup-test-"));
+    const caCertificatePath = path.join(directory, "ca.crt");
+    const caPrivateKeyPath = path.join(directory, "ca.key");
+    const certificatePath = path.join(directory, "lore.crt");
+    const privateKeyPath = path.join(directory, "lore.key");
+    const db = createDatabase(path.join(directory, "portal.sqlite"));
+    const config = loadConfig({
+      NODE_ENV: "test",
+      APP_PUBLIC_URL: "https://118.89.28.163:3000",
+      API_INTERNAL_URL: "http://localhost:4000",
+      OIDC_KEY_DIR: path.join(directory, "keys"),
+      LORE_RUNTIME_CONFIG_PATH: path.join(directory, "config", "local.toml"),
+      LORE_STORAGE_PATH: path.join(directory, "lore"),
+      LORE_CA_FILE: caCertificatePath,
+      LORE_CA_KEY_FILE: caPrivateKeyPath,
+      LORE_QUIC_TLS_CERT_FILE: certificatePath,
+      LORE_QUIC_TLS_KEY_FILE: privateKeyPath,
+    });
+    let app: Awaited<ReturnType<typeof buildApp>> | undefined;
+    try {
+      execFileSync("openssl", [
+        "req",
+        "-x509",
+        "-newkey",
+        "rsa:2048",
+        "-nodes",
+        "-sha256",
+        "-days",
+        "1",
+        "-keyout",
+        caPrivateKeyPath,
+        "-out",
+        caCertificatePath,
+        "-subj",
+        "/CN=Lore Test CA",
+        "-addext",
+        "basicConstraints=critical,CA:TRUE",
+      ]);
+      await migrate(db);
+      app = await buildApp({
+        config,
+        db,
+        lore: {},
+        session: new SessionService(db, config),
+        tokens: await TokenService.create(config, db),
+        oauth: {},
+        mailer: { send: async () => {} },
+        logger: false,
+      } as never);
+
+      const completed = await app.inject({
+        method: "POST",
+        url: "/api/v1/setup",
+        payload: {
+          siteName: "IP Lore",
+          publicAddress: "https://118.89.28.163:3000",
+          username: "admin",
+          email: "admin@example.com",
+          password: "123456",
+          confirmPassword: "123456",
+          userRegistrationEnabled: false,
+        },
+      });
+      expect(completed.statusCode).toBe(201);
+      const certificate = new X509Certificate(
+        readFileSync(certificatePath),
+      );
+      expect(certificate.checkIP("118.89.28.163")).toBe(
+        "118.89.28.163",
+      );
+      expect(readFileSync(privateKeyPath, "utf8")).toContain(
+        "BEGIN PRIVATE KEY",
+      );
+    } finally {
+      await app?.close();
+      await db.end();
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 });
 
 describe("Lore setup addresses", () => {
+  it("classifies the active deployment mode", () => {
+    expect(deploymentModeForAddress("http://localhost:3000")).toBe("local");
+    expect(deploymentModeForAddress("http://127.0.0.1:3000")).toBe("local");
+    expect(deploymentModeForAddress("https://118.89.28.163:3000")).toBe("ip");
+    expect(deploymentModeForAddress("https://10.1.0.8:3000")).toBe("ip");
+    expect(deploymentModeForAddress("https://lore.example.com:3000")).toBe(
+      "domain",
+    );
+  });
+
   it("recognizes local and common LAN hosts", () => {
     for (const host of [
       "localhost",
@@ -251,11 +354,12 @@ describe("Lore setup addresses", () => {
     expect(isLocalOrCommonLanHost("8.8.8.8")).toBe(false);
     expect(loreCertificateRequired("lore://lore.example.com:41337")).toBe(true);
     expect(loreCertificateRequired("lore://192.168.1.20:41337")).toBe(false);
+    expect(loreCertificateRequired("lores://118.89.28.163:3000")).toBe(false);
   });
 
   it("normalizes HTTPS Lore addresses to lores URLs", () => {
     expect(normalizeLorePublicUrl("https://lore.example.com")).toBe(
-      "grpcs://lore.example.com:443",
+      "grpcs://lore.example.com",
     );
     expect(normalizeLorePublicUrl("https://lore.example.com:4443")).toBe(
       "grpcs://lore.example.com:4443",
@@ -264,7 +368,7 @@ describe("Lore setup addresses", () => {
       "grpc://192.168.1.20:80",
     );
     expect(normalizeLorePublicUrl("lores://lore.example.com")).toBe(
-      "lores://lore.example.com:443",
+      "lores://lore.example.com",
     );
     expect(normalizeLorePublicUrl("lore://lore.example.com")).toBe(
       "lore://lore.example.com:3000",
@@ -278,7 +382,7 @@ describe("Lore setup addresses", () => {
     });
     expect(normalizeUnifiedSiteAddress("lore.example.com")).toEqual({
       webPublicUrl: "https://lore.example.com",
-      lorePublicUrl: "lores://lore.example.com:443",
+      lorePublicUrl: "lores://lore.example.com",
     });
   });
 

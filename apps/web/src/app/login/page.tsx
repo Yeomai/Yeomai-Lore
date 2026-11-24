@@ -25,9 +25,10 @@ export default async function LoginPage({
   }
   const { messages } = await getI18n();
   const m = messages.login;
-  const meta = await serverApi<{ userRegistrationEnabled: boolean }>(
-    "/api/v1/meta",
-  );
+  const meta = await serverApi<{
+    userRegistrationEnabled: boolean;
+    loginAnnouncement: string;
+  }>("/api/v1/meta");
   const changed = query.passwordChanged;
   const passwordChanged = Array.isArray(changed)
     ? changed[0] === "1"
@@ -44,6 +45,11 @@ export default async function LoginPage({
     <div className="login-page">
       <section className="auth-card">
         <h1 className="login-card-title">{m.title}</h1>
+        {meta.loginAnnouncement ? (
+          <p className="login-announcement" role="note">
+            {meta.loginAnnouncement}
+          </p>
+        ) : null}
         {passwordChanged ? (
           <p className="notice">{m.passwordChanged}</p>
         ) : null}

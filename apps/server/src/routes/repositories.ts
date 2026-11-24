@@ -42,6 +42,10 @@ import {
   buildRepositoryFileIndex,
   RepositoryFileIndexCache,
 } from "../repository-file-index.ts";
+import {
+  assertPersonalRepositoryQuota,
+  withUserQuotaLock,
+} from "../user-quota.ts";
 
 const createRepositorySchema = z.object({
   organizationId: z.string().uuid().optional(),
@@ -207,14 +211,29 @@ export const registerRepositoryRoutes: FastifyPluginAsync = async (app) => {
       ownerUserId = null;
       organizationSlug = slug;
     }
-    const pending = await createPendingRepository(db, {
-      organizationId,
-      ownerUserId,
-      organizationSlug,
-      slug: input.slug,
-      description: input.description,
-      userId: user.id,
-    });
+    let pending: RepositoryRecord;
+    const createPending = () =>
+      createPendingRepository(db, {
+        organizationId,
+        ownerUserId,
+        organizationSlug,
+        slug: input.slug,
+        description: input.description,
+        userId: user.id,
+      });
+    if (!organizationId && user.globalRole !== "admin") {
+      pending = await withUserQuotaLock(user.id, async () => {
+        await assertPersonalRepositoryQuota({
+          db,
+          lore,
+          tokens,
+          user,
+        });
+        return createPending();
+      });
+    } else {
+      pending = await createPending();
+    }
     const loginToken = await tokens.signLoginToken(user);
     let loreCreated = false;
     try {

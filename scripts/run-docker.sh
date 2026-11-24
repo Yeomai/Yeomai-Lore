@@ -2,7 +2,7 @@
 set -eu
 
 ROOT="$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)"
-IMAGE="${LORE_IMAGE:-yeomai-lore-web:1.1.6}"
+IMAGE="${LORE_IMAGE:-yeomai-lore-web:1.1.7}"
 CONTAINER="${LORE_CONTAINER_NAME:-yeomai-lore-web}"
 
 for dir in site certs; do

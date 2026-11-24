@@ -20,6 +20,8 @@ import {
 import { applySmtpSettings } from "./mail-settings.ts";
 import { isLoreReady } from "./readiness.ts";
 import { restartLore } from "./lore-supervisor.ts";
+import { startRegularRepositoryCleanup } from "./regular-repository-cleanup.ts";
+import { ensureInternalGatewaySecret } from "./internal-gateway-auth.ts";
 
 const envPath = path.resolve(process.cwd(), ".env");
 if (existsSync(envPath)) {
@@ -59,6 +61,9 @@ const oauth = new OAuthService(db, config, tokens);
 const mailer = createMailer(config);
 const lore = new GrpcLoreClient(config);
 const imports = new RepositoryImportService(config, db, lore, tokens);
+const internalGatewaySecret = ensureInternalGatewaySecret(
+  config.internalGatewaySecretFile,
+);
 const app = await buildApp({
   config,
   db,
@@ -70,6 +75,7 @@ const app = await buildApp({
   imports,
   serviceReadiness: () => isLoreReady(config),
   restartLore: () => restartLore(config),
+  internalGatewaySecret,
 });
 const grpcServer = await startRegistryGrpcServer({
   config,
@@ -79,6 +85,12 @@ const grpcServer = await startRegistryGrpcServer({
   lore,
 });
 const maintenance = startMaintenanceCleanup(db, app.log);
+const regularRepositoryCleanup = startRegularRepositoryCleanup(
+  db,
+  lore,
+  tokens,
+  app.log,
+);
 
 let shuttingDown = false;
 const shutdown = async () => {
@@ -86,6 +98,7 @@ const shutdown = async () => {
   shuttingDown = true;
   await imports.stop();
   await maintenance.stop();
+  await regularRepositoryCleanup.stop();
   await app.close();
   grpcServer.forceShutdown();
   await db.end();

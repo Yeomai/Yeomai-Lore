@@ -18,6 +18,7 @@ import { getI18n } from "../../../../i18n/server";
 import type { Messages } from "../../../../i18n/messages";
 import { CopyButton } from "../../../../components/CopyButton";
 import { BrowserTime } from "../../../../components/BrowserTime";
+import { formatLoreAddress } from "../../../../lib/lore-url";
 import { ClearFileSelectionOnReload } from "../../../../components/ClearFileSelectionOnReload";
 import { CommitChangedFiles } from "../../../../components/CommitChangedFiles";
 import { RepositoryFileSearch } from "../../../../components/RepositoryFileSearch";
@@ -139,7 +140,9 @@ export default async function RepositoryPage({
   const currentPath = one(query.path) ?? "";
   const selectedFile = one(query.file);
   const repositoryPath = `${repository.organizationSlug}/${repository.slug}`;
-  const command = `lore clone ${meta.loreRemoteUrl}/${repositoryPath}`;
+  const command = `lore clone ${formatLoreAddress(
+    meta.loreRemoteUrl,
+  )}/${repositoryPath}`;
 
   const revisionPath = `${basePath}/${graphMode ? "revision-graph" : "revisions"}?${new URLSearchParams({
     branch: selectedBranch,

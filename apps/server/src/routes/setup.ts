@@ -1,5 +1,6 @@
 import type { FastifyPluginAsync } from "fastify";
 import { z } from "zod";
+import { isIP } from "node:net";
 import {
   badRequest,
   conflict,
@@ -12,6 +13,7 @@ import { parseInput } from "./helpers.ts";
 import {
   applySiteSettings,
   isSetupRequired,
+  issueLoreIpCertificate,
   loreCertificateRequired,
   normalizeUnifiedSiteAddress,
   readSetupDefaults,
@@ -56,7 +58,7 @@ const setupSchema = z
   });
 
 export const registerSetupRoutes: FastifyPluginAsync = async (app) => {
-  const { db, config, session } = app.services;
+  const { db, config } = app.services;
 
   app.get("/", async () => {
     const required = await isSetupRequired(db);
@@ -96,11 +98,30 @@ export const registerSetupRoutes: FastifyPluginAsync = async (app) => {
 
       const certificateChain = input.certificateChain?.trim() ?? "";
       const privateKey = input.privateKey?.trim() ?? "";
+      let certificateChanged = false;
       if (loreCertificateRequired(lorePublicUrl)) {
         if (!certificateChain || !privateKey) {
           throw badRequest(
             "A Lore TLS certificate and private key are required for this address",
           );
+        }
+      } else {
+        const loreHost = new URL(lorePublicUrl).hostname.replace(
+          /^\[|\]$/g,
+          "",
+        );
+        if (isIP(loreHost) > 0) {
+          const issued = await issueLoreIpCertificate(
+            config,
+            [],
+            lorePublicUrl,
+          );
+          await writeLoreCertificate(
+            config,
+            issued.certificateChain,
+            issued.privateKey,
+          );
+          certificateChanged = true;
         }
       }
       if (certificateChain || privateKey) {
@@ -110,6 +131,7 @@ export const registerSetupRoutes: FastifyPluginAsync = async (app) => {
           privateKey,
         });
         await writeLoreCertificate(config, certificateChain, privateKey);
+        certificateChanged = true;
       }
 
       const settings: SiteSettings = {
@@ -167,8 +189,6 @@ export const registerSetupRoutes: FastifyPluginAsync = async (app) => {
       }
 
       await applySiteSettings(db, config);
-      const created = await session.create(userId);
-      session.setCookie(reply, created.token, created.expiresAt);
       await audit(db, {
         actorUserId: userId,
         action: "system.setup_completed",
@@ -180,13 +200,25 @@ export const registerSetupRoutes: FastifyPluginAsync = async (app) => {
         },
         ip: request.ip,
       });
+      let restartRequired =
+        settings.webPublicUrl !== previousWebPublicUrl ||
+        settings.lorePublicUrl !== previousLorePublicUrl ||
+        certificateChanged;
+      if (restartRequired && app.services.restartLore) {
+        try {
+          await app.services.restartLore();
+          restartRequired = false;
+        } catch (error) {
+          request.log.error(
+            { err: error },
+            "Lore restart failed after setup",
+          );
+        }
+      }
       reply.code(201);
       return {
         ok: true,
-        restartRequired:
-          settings.webPublicUrl !== previousWebPublicUrl ||
-          settings.lorePublicUrl !== previousLorePublicUrl ||
-          Boolean(certificateChain),
+        restartRequired,
       };
     },
   );

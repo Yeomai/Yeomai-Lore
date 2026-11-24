@@ -5,9 +5,11 @@ import { clientApi } from "../lib/client-api";
 import { useI18n } from "../i18n/client";
 import { formatMessage, localizeApiError } from "../i18n/messages";
 import {
+  classifySetupAddress,
   deriveUnifiedPublicAddress,
   needsLoreCertificate,
   toUnifiedSetupAddress,
+  type SetupDeploymentMode,
 } from "../lib/setup-address";
 import { CertificateFileInputs } from "./CertificateFileInputs";
 
@@ -22,9 +24,15 @@ interface SetupDefaults {
 }
 
 export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
+  const initialMode =
+    classifySetupAddress(defaults.webPublicUrl) ?? "local";
+  const [deploymentMode, setDeploymentMode] =
+    useState<SetupDeploymentMode>(initialMode);
   const [siteName, setSiteName] = useState(defaults.siteName);
   const [publicAddress, setPublicAddress] = useState(() =>
-    toUnifiedSetupAddress(defaults.webPublicUrl),
+    initialMode === "local"
+      ? "localhost:3000"
+      : toUnifiedSetupAddress(defaults.webPublicUrl),
   );
   const [certificateChain, setCertificateChain] = useState("");
   const [privateKey, setPrivateKey] = useState("");
@@ -34,19 +42,41 @@ export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
   const [error, setError] = useState("");
   const [restartRequired, setRestartRequired] = useState(false);
   const [completed, setCompleted] = useState(false);
-  const [restarting, setRestarting] = useState(false);
   const { messages } = useI18n();
   const m = messages.setup;
-  const derivedAddresses = deriveUnifiedPublicAddress(publicAddress);
-  const showCertificate = derivedAddresses
-    ? needsLoreCertificate(derivedAddresses.lorePublicUrl)
-    : false;
+  const siteAddress =
+    deploymentMode === "local" ? "localhost:3000" : publicAddress.trim();
+  const derivedAddresses = deriveUnifiedPublicAddress(siteAddress);
+  const detectedMode = classifySetupAddress(siteAddress);
+  const addressMatchesMode =
+    detectedMode === deploymentMode &&
+    (deploymentMode === "local" || !siteAddress.startsWith("http://"));
+  const showCertificate =
+    deploymentMode === "domain" &&
+    Boolean(
+      derivedAddresses &&
+        needsLoreCertificate(derivedAddresses.lorePublicUrl),
+    );
+
+  function selectDeploymentMode(nextMode: SetupDeploymentMode) {
+    setDeploymentMode(nextMode);
+    setError("");
+    if (nextMode === "local") {
+      setPublicAddress("localhost:3000");
+    } else if (classifySetupAddress(publicAddress) !== nextMode) {
+      setPublicAddress("");
+    }
+    if (nextMode !== "domain") {
+      setCertificateChain("");
+      setPrivateKey("");
+    }
+  }
 
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setError("");
-    if (!derivedAddresses) {
+    if (!derivedAddresses || !addressMatchesMode) {
       setError(m.addressInvalid);
       setPending(false);
       return;
@@ -67,7 +97,7 @@ export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
         method: "POST",
         body: JSON.stringify({
           siteName,
-          publicAddress: publicAddress.trim(),
+          publicAddress: siteAddress,
           username: form.get("username"),
           email: form.get("email"),
           displayName: form.get("displayName") || undefined,
@@ -88,21 +118,6 @@ export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
     }
   }
 
-  async function restartBackend() {
-    setRestarting(true);
-    setError("");
-    try {
-      await clientApi("/api/v1/system/restart-lore", {
-        method: "POST",
-      });
-      await clientApi("/api/v1/auth/logout", { method: "POST" });
-      window.location.replace("/login");
-    } catch (cause) {
-      setError(localizeApiError(cause, messages));
-      setRestarting(false);
-    }
-  }
-
   if (completed) {
     return (
       <div className="setup-success">
@@ -110,25 +125,9 @@ export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
         <p>
           {restartRequired ? m.restartDescription : m.completedDescription}
         </p>
-        {restartRequired ? (
-          <>
-            {restarting ? (
-              <p className="settings-status">{m.restarting}</p>
-            ) : (
-              <button
-                className="button primary"
-                type="button"
-                onClick={() => void restartBackend()}
-              >
-                {m.restartService}
-              </button>
-            )}
-          </>
-        ) : (
-          <a className="button primary" href="/dashboard">
-            {m.goDashboard}
-          </a>
-        )}
+        <a className="button primary" href="/login">
+          {m.goDashboard}
+        </a>
         {error ? (
           <p className="form-error" role="alert">
             {error}
@@ -145,6 +144,40 @@ export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
       <form className="stack setup-form" onSubmit={submit}>
       <fieldset>
         <legend>{m.siteSection}</legend>
+        <div className="deployment-mode-fieldset">
+          <span className="field-label">{m.deploymentMode}</span>
+          <div className="deployment-mode-grid">
+            {(
+              [
+                ["local", m.modeLocal, m.modeLocalHint],
+                ["ip", m.modeIp, m.modeIpHint],
+                ["domain", m.modeDomain, m.modeDomainHint],
+              ] as const
+            ).map(([value, label, hint]) => (
+              <label
+                className={
+                  deploymentMode === value
+                    ? "deployment-mode-option is-selected"
+                    : "deployment-mode-option"
+                }
+                key={value}
+              >
+                <input
+                  type="radio"
+                  name="deploymentMode"
+                  value={value}
+                  checked={deploymentMode === value}
+                  onChange={() => selectDeploymentMode(value)}
+                  disabled={pending}
+                />
+                <span>
+                  <strong>{label}</strong>
+                  <small>{hint}</small>
+                </span>
+              </label>
+            ))}
+          </div>
+        </div>
         <label>
           {m.siteName}
           <input
@@ -154,28 +187,48 @@ export function SetupForm({ defaults }: { defaults: SetupDefaults }) {
             required
           />
         </label>
-        <label>
-          {m.webAddress}
-          <input
-            value={publicAddress}
-            onChange={(event) => setPublicAddress(event.currentTarget.value)}
-            placeholder="localhost:3000"
-            aria-invalid={!derivedAddresses || undefined}
-            required
-          />
-          <span className="field-hint">{m.webAddressHint}</span>
-          <span
-            className={derivedAddresses ? "field-hint" : "form-error"}
-            role={derivedAddresses ? undefined : "alert"}
-          >
-            {derivedAddresses
-              ? formatMessage(m.addressPreview, {
-                  webUrl: derivedAddresses.webPublicUrl,
-                  loreUrl: derivedAddresses.lorePublicUrl,
-                })
-              : m.addressInvalid}
-          </span>
-        </label>
+        {deploymentMode === "local" ? (
+          <div className="deployment-address-preview">
+            <span className="field-label">{m.modeLocalAddress}</span>
+            <code>http://localhost:3000</code>
+            <code>lore://localhost:3000</code>
+          </div>
+        ) : (
+          <label>
+            {deploymentMode === "ip" ? m.ipAddress : m.domainAddress}
+            <input
+              value={publicAddress}
+              onChange={(event) => setPublicAddress(event.currentTarget.value)}
+              placeholder={
+                deploymentMode === "ip"
+                  ? "118.89.28.163:3000"
+                  : "lore.example.com:3000"
+              }
+              aria-invalid={!derivedAddresses || !addressMatchesMode || undefined}
+              required
+            />
+            <span className="field-hint">
+              {deploymentMode === "ip"
+                ? m.modeIpHint
+                : m.modeDomainHint}
+            </span>
+          </label>
+        )}
+        <span
+          className={
+            derivedAddresses && addressMatchesMode
+              ? "field-hint"
+              : "form-error"
+          }
+          role={derivedAddresses && addressMatchesMode ? undefined : "alert"}
+        >
+          {derivedAddresses && addressMatchesMode
+            ? formatMessage(m.addressPreview, {
+                webUrl: derivedAddresses.webPublicUrl,
+                loreUrl: derivedAddresses.lorePublicUrl,
+              })
+            : m.addressModeMismatch}
+        </span>
         {showCertificate ? (
           <div className="certificate-fields">
             <p className="field-hint">{m.certificateDescription}</p>

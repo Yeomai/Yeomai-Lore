@@ -64,6 +64,11 @@ export interface LoreClient {
     branchId: string,
     token: string,
   ): Promise<RepositorySnapshot | null>;
+  getRevisionSize(input: {
+    repositoryId: string;
+    revisionSignature: string;
+    token: string;
+  }): Promise<number>;
   listBranches(repositoryId: string, token: string): Promise<BranchSummary[]>;
   listRevisions(
     repositoryId: string,

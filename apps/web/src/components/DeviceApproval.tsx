@@ -13,18 +13,25 @@ interface DeviceStatus {
   clientId: string;
 }
 
+interface Approver {
+  displayName: string;
+  email: string;
+  username: string;
+}
+
 export function DeviceApproval({
   initialCode,
-  authenticated,
+  initialApprover,
   loginNext,
 }: {
   initialCode: string;
-  authenticated: boolean;
+  initialApprover: Approver | null;
   loginNext: string;
 }) {
   const [status, setStatus] = useState<DeviceStatus["status"] | "">("");
   const [clientId, setClientId] = useState("");
   const [message, setMessage] = useState("");
+  const [approver, setApprover] = useState(initialApprover);
   const [pendingAction, setPendingAction] = useState<"approve" | "deny" | null>(
     null,
   );
@@ -78,10 +85,25 @@ export function DeviceApproval({
     return () => window.clearTimeout(timer);
   }, [status]);
 
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === "visible") {
+        void loadCurrentApprover();
+      }
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      document.removeEventListener("visibilitychange", refresh);
+      window.removeEventListener("focus", refresh);
+    };
+  }, []);
+
   async function approve() {
     setPendingAction("approve");
     setMessage("");
     try {
+      if (!(await requireCurrentApprover())) return;
       await clientApi("/api/v1/auth/device/approve", {
         method: "POST",
         body: JSON.stringify({ userCode: initialCode }),
@@ -99,6 +121,7 @@ export function DeviceApproval({
     setPendingAction("deny");
     setMessage("");
     try {
+      if (!(await requireCurrentApprover())) return;
       await clientApi("/api/v1/auth/device/deny", {
         method: "POST",
         body: JSON.stringify({ userCode: initialCode }),
@@ -112,6 +135,25 @@ export function DeviceApproval({
     }
   }
 
+  async function requireCurrentApprover(): Promise<Approver | null> {
+    const current = await loadCurrentApprover();
+    if (!current) setMessage(m.signInToApprove);
+    return current;
+  }
+
+  async function loadCurrentApprover(): Promise<Approver | null> {
+    try {
+      const current = await clientApi<{ user: Approver | null }>(
+        "/api/v1/auth/session",
+      );
+      setApprover(current.user);
+      return current.user;
+    } catch {
+      setApprover(null);
+      return null;
+    }
+  }
+
   return (
     <div className="stack">
       {clientId ? (
@@ -119,9 +161,17 @@ export function DeviceApproval({
           {formatMessage(m.requestedBy, { client: clientId })}
         </p>
       ) : null}
+      {approver ? (
+        <p className="muted">
+          {formatMessage(m.approvalAccount, {
+            name: approver.displayName,
+            email: approver.email,
+          })}
+        </p>
+      ) : null}
       {message ? <p className="muted">{message}</p> : null}
       {status === "pending" ? (
-        authenticated ? (
+        approver ? (
           <div className="button-row">
             <button
               className="button primary"

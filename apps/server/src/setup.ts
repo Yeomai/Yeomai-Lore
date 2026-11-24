@@ -1,11 +1,22 @@
 import {
   X509Certificate,
+  randomBytes,
   createPrivateKey,
   createPublicKey,
 } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { isIP } from "node:net";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { promisify } from "node:util";
 import { badRequest } from "@lore-portal/shared";
 import type { AppConfig } from "./config.ts";
 import {
@@ -31,6 +42,25 @@ export interface LoreStoreGcConfig {
   maxSize: number;
   compactionDelay: number;
 }
+
+export type DeploymentMode = "local" | "ip" | "domain";
+
+export function deploymentModeForAddress(webPublicUrl: string): DeploymentMode {
+  const host = new URL(webPublicUrl).hostname
+    .replace(/^\[|\]$/g, "")
+    .toLowerCase();
+  if (
+    host === "localhost" ||
+    host === "::1" ||
+    host === "0:0:0:0:0:0:0:1" ||
+    (isIP(host) === 4 && host.startsWith("127."))
+  ) {
+    return "local";
+  }
+  return isIP(host) > 0 ? "ip" : "domain";
+}
+
+const execFileAsync = promisify(execFile);
 
 export interface LegacyAddressMigration {
   previousWebPublicUrl: string;
@@ -227,7 +257,9 @@ function unifiedSiteUrls(
     webPublicUrl: `${web.protocol}//${renderedHost}${
       web.port ? `:${web.port}` : ""
     }`,
-    lorePublicUrl: `${loreProtocol}//${renderedHost}:${port}`,
+    lorePublicUrl: `${loreProtocol}//${renderedHost}${
+      loreProtocol === "lores:" && port === "443" ? "" : `:${port}`
+    }`,
   };
 }
 
@@ -285,7 +317,9 @@ export function normalizeUnifiedSiteAddress(value: string): {
   const port = parsed.port || (parsed.protocol === "https:" ? "443" : "80");
   return {
     webPublicUrl: parsed.origin,
-    lorePublicUrl: `${loreProtocol}//${parsed.hostname}:${port}`,
+    lorePublicUrl: `${loreProtocol}//${parsed.hostname}${
+      loreProtocol === "lores:" && port === "443" ? "" : `:${port}`
+    }`,
   };
 }
 
@@ -327,7 +361,10 @@ export function normalizeLorePublicUrl(value: string): string {
     : normalizedProtocol === "lore:"
       ? "3000"
       : "80";
-  return `${normalizedProtocol}//${hostname}:${parsed.port || defaultPort}`;
+  const port = parsed.port || defaultPort;
+  return `${normalizedProtocol}//${hostname}${
+    defaultPort === "443" && port === "443" ? "" : `:${port}`
+  }`;
 }
 
 export function isLocalOrCommonLanHost(value: string): boolean {
@@ -349,7 +386,8 @@ export function isLocalOrCommonLanHost(value: string): boolean {
 
 export function loreCertificateRequired(lorePublicUrl: string): boolean {
   const parsed = new URL(lorePublicUrl);
-  return !isLocalOrCommonLanHost(parsed.hostname);
+  const host = parsed.hostname.replace(/^\[|\]$/g, "");
+  return !isLocalOrCommonLanHost(host) && isIP(host) === 0;
 }
 
 export async function validateLoreCertificate(input: {
@@ -423,6 +461,7 @@ export async function readLoreCertificateStatus(config: AppConfig) {
       validFrom: null,
       validTo: null,
       fingerprint256: null,
+      ipAddresses: [],
     };
   }
   try {
@@ -447,6 +486,19 @@ export async function readLoreCertificateStatus(config: AppConfig) {
       validFrom: new Date(certificate.validFrom).toISOString(),
       validTo: new Date(certificate.validTo).toISOString(),
       fingerprint256: certificate.fingerprint256,
+      ipAddresses: certificate.subjectAltName
+        ?.split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.startsWith("IP Address:"))
+        .map((entry) => entry.slice("IP Address:".length))
+        .filter(
+          (address) =>
+            ![
+              "127.0.0.1",
+              "::1",
+              "0:0:0:0:0:0:0:1",
+            ].includes(address),
+        ) ?? [],
     };
   } catch {
     return {
@@ -457,8 +509,118 @@ export async function readLoreCertificateStatus(config: AppConfig) {
       validFrom: null,
       validTo: null,
       fingerprint256: null,
+      ipAddresses: [],
     };
   }
+}
+
+export async function issueLoreIpCertificate(
+  config: AppConfig,
+  requestedIpAddresses: string[],
+  lorePublicUrl = config.lorePublicUrl,
+): Promise<{
+  certificateChain: string;
+  privateKey: string;
+  ipAddresses: string[];
+}> {
+  if (!config.loreCaFile || !config.loreCaKeyFile) {
+    throw badRequest("The local root CA is not configured");
+  }
+  const currentHost = new URL(lorePublicUrl).hostname.replace(
+    /^\[|\]$/g,
+    "",
+  );
+  if (isIP(currentHost) === 0) {
+    throw badRequest(
+      "IP certificate issuance requires an IP-based Lore site address",
+    );
+  }
+  const ipAddresses = [
+    ...new Set(
+      [currentHost, "127.0.0.1", "::1", ...requestedIpAddresses].map(
+        normalizeCertificateIp,
+      ),
+    ),
+  ];
+  const visibleIpAddresses = ipAddresses.filter(
+    (address) =>
+      !["127.0.0.1", "::1", "0:0:0:0:0:0:0:1"].includes(address),
+  );
+  const directory = await mkdtemp(path.join(tmpdir(), "lore-ip-certificate-"));
+  const keyPath = path.join(directory, "lore.key");
+  const csrPath = path.join(directory, "lore.csr");
+  const certificatePath = path.join(directory, "lore.crt");
+  const extensionPath = path.join(directory, "lore.ext");
+  try {
+    await writeFile(
+      extensionPath,
+      [
+        "basicConstraints=critical,CA:FALSE",
+        "keyUsage=critical,digitalSignature,keyEncipherment",
+        "extendedKeyUsage=serverAuth",
+        `subjectAltName=DNS:localhost,${ipAddresses
+          .map((address) => `IP:${address}`)
+          .join(",")}`,
+        "authorityKeyIdentifier=keyid,issuer",
+        "subjectKeyIdentifier=hash",
+        "",
+      ].join("\n"),
+      { mode: 0o600 },
+    );
+    await execFileAsync("openssl", [
+      "req",
+      "-new",
+      "-newkey",
+      "rsa:2048",
+      "-nodes",
+      "-sha256",
+      "-keyout",
+      keyPath,
+      "-out",
+      csrPath,
+      "-subj",
+      `/CN=${currentHost}`,
+    ]);
+    await execFileAsync("openssl", [
+      "x509",
+      "-req",
+      "-sha256",
+      "-days",
+      "3650",
+      "-in",
+      csrPath,
+      "-CA",
+      config.loreCaFile,
+      "-CAkey",
+      config.loreCaKeyFile,
+      "-set_serial",
+      `0x${randomBytes(16).toString("hex")}`,
+      "-out",
+      certificatePath,
+      "-extfile",
+      extensionPath,
+    ]);
+    const [certificateChain, privateKey] = await Promise.all([
+      readFile(certificatePath, "utf8"),
+      readFile(keyPath, "utf8"),
+    ]);
+    await validateLoreCertificate({
+      lorePublicUrl,
+      certificateChain,
+      privateKey,
+    });
+    return { certificateChain, privateKey, ipAddresses: visibleIpAddresses };
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
+export function normalizeCertificateIp(value: string): string {
+  const address = value.trim().replace(/^\[|\]$/g, "");
+  if (isIP(address) === 0) {
+    throw badRequest(`Invalid IP address: ${value}`);
+  }
+  return address;
 }
 
 export async function readLoreStoreGcConfig(

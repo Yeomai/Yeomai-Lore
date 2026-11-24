@@ -50,9 +50,21 @@ const en = {
       "Welcome. Create an administrator account and configure the required options.",
     siteSection: "Site address",
     siteName: "Site name",
+    deploymentMode: "Deployment mode",
+    modeLocal: "Local only",
+    modeLocalHint: "Use localhost. No certificate is required.",
+    modeIp: "LAN or public IP",
+    modeIpHint: "The local CA issues the certificate automatically.",
+    modeDomain: "Public domain",
+    modeDomainHint: "Upload a matching TLS certificate and private key.",
+    modeLocalAddress: "Fixed local addresses",
+    ipAddress: "IP address with port",
+    domainAddress: "Domain with port",
+    addressModeMismatch:
+      "Enter an address that matches the selected deployment mode.",
     webAddress: "Site address",
     webAddressHint:
-      "Enter the host and optional port. Public domains use HTTPS; localhost and LAN addresses use HTTP.",
+      "Enter the host and optional port. IP addresses are issued a local-CA certificate automatically; only public domains require an uploaded TLS certificate.",
     addressPreview: "Web: {webUrl} · Lore: {loreUrl}",
     addressInvalid:
       "Enter a host and optional port, or a complete http:// or https:// address.",
@@ -62,7 +74,7 @@ const en = {
     addressesMustDiffer:
       "The Lore client address must be different from the Web management address.",
     certificateDescription:
-      "Upload a certificate whose hostname covers this Lore address. Include the intermediate certificate chain when supplied by your certificate issuer.",
+      "Public domains require a matching TLS certificate and private key.",
     certificateChain: "Certificate chain (PEM)",
     privateKey: "Private key (PEM)",
     chooseCertificateFile: "Choose certificate",
@@ -117,12 +129,10 @@ const en = {
     submitting: "Setting up…",
     completedTitle: "Setup guide completed",
     completedDescription:
-      "Configuration is active. You can continue to the dashboard.",
+      "Setup is complete. Sign in with the administrator account you just created.",
     restartDescription:
-      "Restart the Lore service for the new configuration to take effect.",
-    restartService: "Restart Lore service",
-    restarting: "Restarting the Lore service, please wait…",
-    goDashboard: "Continue to dashboard",
+      "Setup is complete, but Lore could not restart automatically. Sign in, then restart Lore from the administration page.",
+    goDashboard: "Sign in and open console",
   },
   startup: {
     title: "Starting services",
@@ -348,6 +358,38 @@ const en = {
     certificateLocalEmpty:
       "Certificate management is not required for this local Lore address.",
     certificateCurrent: "Current certificate",
+    certificateCaTitle: "Root CA certificate",
+    certificateCaDescription:
+      "Download and trust this CA once on devices that access the site through a bare IP address.",
+    certificateCaDownload: "Download root CA",
+    certificateCaMacTitle: "macOS installation",
+    certificateCaMacSteps: [
+      "Download the Yeomai-Lore-CA.crt file.",
+      "Open Keychain Access and select the login keychain.",
+      "Import the certificate into login; do not use System Roots.",
+      "Open the imported certificate, expand Trust, choose Always Trust, and enter the Mac password.",
+      "Quit and reopen the browser and Lore Desktop.",
+    ],
+    certificateCaWindowsTitle: "Windows installation",
+    certificateCaWindowsSteps: [
+      "Download and double-click the Yeomai-Lore-CA.crt file.",
+      "Choose Install Certificate and select Current User or Local Machine.",
+      "Choose Place all certificates in the following store, then browse to Trusted Root Certification Authorities.",
+      "Finish installation and confirm the Windows security warning.",
+      "Close and reopen the browser and Lore Desktop.",
+    ],
+    certificateIpsTitle: "Additional access IPs (advanced)",
+    certificateIpsDescription:
+      "The standard site IP is added automatically. Use this section only when additional LAN, NAT, or elastic IP addresses must reach the same server.",
+    certificateIpsLabel:
+      "Additional server IP — for example, computers A and B reach the server at 192.168.x.x, computer C reaches it at 10.1.x.x, and only C fails; add the exact 10.1.x.x server IP that C uses",
+    certificateIpsHint:
+      "One concrete address per line. Wildcards and CIDR ranges are not supported. These entries extend certificate coverage and HTTPS reachability only; they do not change the OIDC login address.",
+    certificateSiteIp: "Standard site IP",
+    certificateIpsIssue: "Issue IP certificate",
+    certificateIpsIssuing: "Issuing certificate and restarting Lore…",
+    certificateIpsIssued:
+      "IP certificate issued. The HTTPS gateway reloaded it, and Lore was restarted.",
     certificateMissing: "No certificate uploaded.",
     certificateInvalid: "The stored certificate could not be read.",
     certificateSubject: "Subject",
@@ -365,6 +407,10 @@ const en = {
     audit: "Audit log",
     systemInfo: "System information",
     systemInfoTitle: "System information",
+    deploymentMode: "Deployment mode",
+    deploymentLocal: "Local only (localhost)",
+    deploymentIp: "LAN or public IP",
+    deploymentDomain: "Public domain",
     smtp: "SMTP email",
     smtpTitle: "SMTP email settings",
     saveSmtp: "Save SMTP settings",
@@ -385,12 +431,19 @@ const en = {
     serverUnavailable: "Unavailable",
     transportSecurityTitle: "Connection and authentication",
     transportSecurityNote:
-      "Official Lore clients accept any HTTPS OIDC issuer. A plain HTTP OIDC issuer is only allowed for localhost, 127.0.0.0/8, or ::1. lore:// can connect to non-loopback hosts but does not authenticate the server. lores:// requires a server TLS certificate trusted by the client; the certificate may come from a public CA, a corporate internal CA, or a trusted local CA.",
-    transportSecurityAllowed: "The following HTTP OIDC issuers are allowed:",
-    transportSecurityDenied:
-      "The following addresses are not allowed as HTTP OIDC issuers:",
-    transportSecurityDnsRecommendation:
-      "Therefore, Lore Desktop on other computers on the LAN cannot access a locally deployed service. If LAN access is required while keeping data on the LAN, the simplest approach is to deploy the service publicly first, then add this DNS mapping on the client computer:",
+      "The deployment mode determines the standard Web and Lore addresses and the OIDC issuer. Only the active mode should be used for authentication.",
+    transportCurrent: "Current",
+    transportLocalDescription:
+      "Only the browser and Lore client on the same computer can use localhost.",
+    transportIpDescription:
+      "Clients use HTTPS and lores:// with the server IP. The certificate is issued by the local CA, so each client must install and trust the downloaded root CA. Additional IPs extend certificate coverage only; they do not change the OIDC issuer.",
+    transportIpLocalTitle: "Access from this computer",
+    transportIpLocalDescription:
+      "After deploying with a LAN or public IP, the same computer can also connect through localhost:",
+    transportIpLocalNote:
+      "Because the standard site address and OIDC issuer remain the configured IP address, this computer must still trust the Yeomai Lore CA.",
+    transportDomainDescription:
+      "Upload a public TLS certificate for the domain.",
     user: "User",
     username: "Username",
     email: "Email",
@@ -525,6 +578,30 @@ const en = {
     userInvitationsEnabled: "Allow user invitations",
     userInvitationsEnabledDescription:
       "When enabled, regular users can invite people to create portal accounts. Administrators can always invite.",
+    loginAnnouncementTitle: "Login announcement",
+    loginAnnouncementDescription:
+      "This announcement appears above the login form and can be updated at any time.",
+    loginAnnouncementLabel: "Announcement",
+    loginAnnouncementPlaceholder:
+      "Enter a notice for users, such as quota limits or maintenance information.",
+    loginAnnouncementHint:
+      "Leave empty to hide the announcement. Up to 2000 characters.",
+    saveAnnouncement: "Save announcement",
+    savingAnnouncement: "Saving announcement…",
+    announcementSaved: "Login announcement saved.",
+    regularUserQuotaTitle: "User quota settings",
+    enableRegularUserQuota: "Enable regular user quotas",
+    regularUserQuotaDescription:
+      "These limits apply only to non-administrator personal repositories. Pushes that would exceed the combined logical size of every live branch are rejected; organization repositories are excluded.",
+    regularUserMaxRepositories: "Maximum personal repositories",
+    regularUserMaxSizeMiB: "Logical size across all live branches (MiB)",
+    regularUserImportMaxMiB: "Maximum Git import size (MiB)",
+    regularUserCleanupHours: "Automatic cleanup interval (hours)",
+    regularUserQuotaZeroHint:
+      "Enter 0 to disable a limit. A cleanup interval of 0 disables automatic deletion.",
+    saveQuota: "Save quotas",
+    savingQuota: "Saving quotas…",
+    quotaSaved: "Quota settings saved.",
     savingSetting: "Saving…",
     loreServiceControl: "Lore version control service",
     restartLoreDescription:
@@ -652,6 +729,7 @@ const en = {
       "Approval is required whenever Lore starts a Device Flow. Normal Access Token renewal uses the stored Refresh Token and does not start another Device Flow. Clearing only local Lore credentials does not revoke the server-side session.",
     missingCode: "The OAuth authentication request is missing its device code.",
     requestedBy: "Requested by {client}",
+    approvalAccount: "Approving account: {name} ({email})",
     approvalRequired:
       "This device has no active OAuth identity. Confirm this login to continue.",
     confirmLogin: "Confirm OAuth login",
@@ -805,9 +883,20 @@ const zhCN: Messages = {
       "欢迎使用，请创建管理员，并配置必要的选项。",
     siteSection: "站点地址",
     siteName: "站点名称",
+    deploymentMode: "部署方式",
+    modeLocal: "仅本机使用 localhost",
+    modeLocalHint: "只使用 localhost，无需证书。",
+    modeIp: "局域网或公网 IP",
+    modeIpHint: "由本地 CA 自动签发证书。",
+    modeDomain: "公网域名",
+    modeDomainHint: "需要上传匹配的 TLS 证书和私钥。",
+    modeLocalAddress: "固定的本机访问地址",
+    ipAddress: "IP 地址（含端口）",
+    domainAddress: "域名（含端口）",
+    addressModeMismatch: "请输入与所选部署方式匹配的地址。",
     webAddress: "站点地址",
     webAddressHint:
-      "填写域名和可选端口；公网域名使用 HTTPS，localhost 和局域网地址使用 HTTP。",
+      "填写域名和可选端口。IP 地址会自动使用本地 CA 签发证书，只有公网域名需要上传 TLS 证书。",
     addressPreview: "Web：{webUrl} · Lore：{loreUrl}",
     addressInvalid:
       "请填写域名和可选端口，或完整的 http://、https:// 地址。",
@@ -815,7 +904,7 @@ const zhCN: Messages = {
     autoAddressHint: "用于提供Lore服务的地址",
     addressesMustDiffer: "Lore 客户端地址不能与 Web 管理地址相同。",
     certificateDescription:
-      "请提前为该 HTTPS 域名申请 TLS 证书。服务器证书必须包含当前站点的域名 SAN；如签发方提供中间证书，请按服务器证书在前、中间证书在后的顺序合并为同一证书文件并上传，并确保私钥与证书匹配。",
+      "公网域名需要上传匹配的 TLS 证书和私钥。",
     certificateChain: "公钥证书链（PEM）",
     privateKey: "私钥（PEM）",
     chooseCertificateFile: "选择公钥证书",
@@ -867,11 +956,10 @@ const zhCN: Messages = {
     submit: "完成初始化",
     submitting: "正在初始化…",
     completedTitle: "安装向导已完成",
-    completedDescription: "配置已生效，可以进入控制台。",
-    restartDescription: "请重启 Lore 服务以使配置生效。",
-    restartService: "重启 Lore 服务",
-    restarting: "Lore 服务正在重启，请稍候…",
-    goDashboard: "进入控制台",
+    completedDescription: "安装已完成，请使用刚创建的管理员账号登录。",
+    restartDescription:
+      "安装已完成，但 Lore 服务未能自动重启。请先登录，然后在管理页面重启 Lore 服务。",
+    goDashboard: "登录并进入控制台",
   },
   startup: {
     title: "正在启动服务",
@@ -1090,6 +1178,38 @@ const zhCN: Messages = {
       "上传与当前 Lore 地址匹配的公钥证书和私钥。",
     certificateLocalEmpty: "当前是本地 Lore 地址，无需管理公钥证书。",
     certificateCurrent: "当前证书",
+    certificateCaTitle: "根 CA 证书",
+    certificateCaDescription:
+      "请在使用裸 IP 访问站点的设备上安装一次并信任该 CA。",
+    certificateCaDownload: "下载根 CA",
+    certificateCaMacTitle: "macOS 安装说明",
+    certificateCaMacSteps: [
+      "下载 Yeomai-Lore-CA.crt 文件。",
+      "打开“钥匙串访问”，选择“登录”钥匙串。",
+      "将证书导入“登录”，不要导入“系统根证书”。",
+      "双击该证书并展开“信任”，将“使用此证书时”设为“始终信任”，然后输入 Mac 登录密码。",
+      "完全退出并重新打开浏览器和 Lore Desktop。",
+    ],
+    certificateCaWindowsTitle: "Windows 安装说明",
+    certificateCaWindowsSteps: [
+      "下载并双击 Yeomai-Lore-CA.crt 文件。",
+      "点击“安装证书”，选择“当前用户”或“本地计算机”。",
+      "选择“将所有的证书都放入下列存储”，浏览并选择“受信任的根证书颁发机构”。",
+      "完成安装并确认 Windows 安全警告。",
+      "关闭并重新打开浏览器和 Lore Desktop。",
+    ],
+    certificateIpsTitle: "附加访问 IP（高级）",
+    certificateIpsDescription:
+      "标准站点 IP 会自动加入。只有需要额外通过局域网、NAT 或弹性公网 IP 访问同一台服务器时才使用这里。",
+    certificateIpsLabel:
+      "附加服务器 IP 地址，例如 A、B 电脑通过 192.168.x.x 访问服务器，C 电脑通过 10.1.x.x 访问且只有 C 无法访问，此时填写 C 实际使用的 10.1.x.x 服务器 IP",
+    certificateIpsHint:
+      "每行填写一个具体 IP，不支持通配符或网段。附加 IP 只扩展证书覆盖范围和 HTTPS 可达性，不会改变 OIDC 登录地址。",
+    certificateSiteIp: "标准站点 IP",
+    certificateIpsIssue: "签发 IP 证书",
+    certificateIpsIssuing: "正在签发证书并重启 Lore…",
+    certificateIpsIssued:
+      "IP 证书已签发，HTTPS 网关已自动重新加载证书，Lore 服务已重启。",
     certificateMissing: "尚未上传证书。",
     certificateInvalid: "已保存的证书无法读取。",
     certificateSubject: "证书主体",
@@ -1106,6 +1226,10 @@ const zhCN: Messages = {
     audit: "审计日志",
     systemInfo: "系统信息",
     systemInfoTitle: "系统信息",
+    deploymentMode: "部署方式",
+    deploymentLocal: "仅本机使用 localhost",
+    deploymentIp: "局域网或公网 IP",
+    deploymentDomain: "公网域名",
     smtp: "SMTP 邮箱",
     smtpTitle: "SMTP 邮箱设置",
     saveSmtp: "保存 SMTP 设置",
@@ -1125,11 +1249,19 @@ const zhCN: Messages = {
     serverUnavailable: "不可用",
     transportSecurityTitle: "连接与认证说明",
     transportSecurityNote:
-      "Lore 官方客户端允许任意 HTTPS OIDC issuer；普通 HTTP OIDC issuer 只能用于 localhost、127.0.0.0/8 或 ::1。lore:// 可以连接非 loopback 主机，但不认证服务端。lores:// 必须使用客户端信任的服务端 TLS 证书，该证书可以来自公共 CA、公司内部 CA 或受信任的本地 CA。",
-    transportSecurityAllowed: "所以下面允许：",
-    transportSecurityDenied: "下面不允许作为 HTTP OIDC issuer：",
-    transportSecurityDnsRecommendation:
-      "所以本地部署的服务内网其他电脑的Lore Desktop无法访问，如需内网访问且数据在内网中流通，最简单的方式是建议先公网部署后在电脑上增加DNS解析：",
+      "部署方式决定标准 Web 地址、Lore 地址和 OIDC issuer。登录认证时只能使用当前部署方式对应的地址。",
+    transportCurrent: "当前方式",
+    transportLocalDescription:
+      "只有本机上的浏览器和 Lore 客户端可以使用 localhost。",
+    transportIpDescription:
+      "客户端使用 IP 对应的 HTTPS 和 lores:// 地址。证书由本地 CA 签发，每台客户端都需要安装并信任从后台下载的根 CA。附加 IP 只扩展证书覆盖范围，不会改变 OIDC issuer。",
+    transportIpLocalTitle: "同一台电脑访问",
+    transportIpLocalDescription:
+      "完成局域网或公网 IP 部署后，当前电脑也可以通过 localhost 访问：",
+    transportIpLocalNote:
+      "由于标准站点地址和 OIDC issuer 仍然是当前配置的 IP 地址，本机仍需信任 Yeomai Lore CA。",
+    transportDomainDescription:
+      "需要上传该公网域名的公共 TLS 证书。",
     user: "用户",
     username: "用户名",
     email: "邮箱",
@@ -1260,6 +1392,30 @@ const zhCN: Messages = {
     userInvitationsEnabled: "是否允许用户邀请",
     userInvitationsEnabledDescription:
       "开启后，普通用户可以邀请他人创建门户账户；管理员始终可以邀请。",
+    loginAnnouncementTitle: "登录页公告",
+    loginAnnouncementDescription:
+      "公告会显示在登录表单上方，可随时修改。",
+    loginAnnouncementLabel: "公告内容",
+    loginAnnouncementPlaceholder:
+      "填写给用户看的提示，例如仓库配额、容量限制或维护信息。",
+    loginAnnouncementHint:
+      "留空则不显示公告，最多支持 2000 个字符。",
+    saveAnnouncement: "保存公告",
+    savingAnnouncement: "正在保存公告…",
+    announcementSaved: "登录页公告已保存。",
+    regularUserQuotaTitle: "用户配额设置",
+    enableRegularUserQuota: "启用普通用户配额",
+    regularUserQuotaDescription:
+      "以下限制仅作用于非管理员的个人仓库；会超过全部有效分支逻辑总大小的推送将被拒绝，组织仓库不包含在内。",
+    regularUserMaxRepositories: "最大个人仓库数量",
+    regularUserMaxSizeMiB: "全部有效分支逻辑总大小（MiB）",
+    regularUserImportMaxMiB: "Git 导入大小上限（MiB）",
+    regularUserCleanupHours: "自动清理周期（小时）",
+    regularUserQuotaZeroHint:
+      "填写 0 表示关闭对应限制；清理周期为 0 时不会自动删除仓库。",
+    saveQuota: "保存配额",
+    savingQuota: "正在保存配额…",
+    quotaSaved: "配额设置已保存。",
     savingSetting: "正在保存…",
     loreServiceControl: "Lore 版本控制服务",
     restartLoreDescription:
@@ -1385,6 +1541,7 @@ const zhCN: Messages = {
       "每次 Lore 发起 Device Flow 都需要浏览器确认。正常的 Access Token 续期会使用已保存的 Refresh Token，不会重新发起 Device Flow。仅清除本地 Lore 凭据不会撤销服务端身份。",
     missingCode: "OAuth 身份认证请求缺少设备授权码。",
     requestedBy: "请求客户端：{client}",
+    approvalAccount: "审批账号：{name}（{email}）",
     approvalRequired: "此设备没有有效的 OAuth 身份，请确认本次登录后继续。",
     confirmLogin: "确认 OAuth 登录",
     confirming: "正在确认…",
