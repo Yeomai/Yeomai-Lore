@@ -35,30 +35,7 @@ esac
 triple="$arch-$os"
 mkdir -p "$INSTALL_DIR"
 work="$(mktemp -d)"
-release_json="$work/release.json"
 trap 'rm -rf "$work"' EXIT INT TERM
-
-curl -fsSL \
-  --retry 5 \
-  --retry-delay 2 \
-  --retry-all-errors \
-  --connect-timeout 15 \
-  "https://api.github.com/repos/$REPO/releases/tags/v$VERSION" \
-  -o "$release_json"
-
-asset_url() {
-  node -e '
-    const fs = require("fs");
-    const [file, binary, triple] = process.argv.slice(1);
-    const release = JSON.parse(fs.readFileSync(file, "utf8"));
-    const pattern = new RegExp(
-      "^" + binary + "-v?[0-9][^\\\"]*-" + triple + "\\.(?:tar\\.gz|zip)$"
-    );
-    const asset = release.assets.find((item) => pattern.test(item.name));
-    if (!asset) process.exit(2);
-    process.stdout.write(asset.browser_download_url);
-  ' "$release_json" "$1" "$triple"
-}
 
 install_binary() {
   binary="$1"
@@ -69,7 +46,7 @@ install_binary() {
     return
   fi
 
-  url="$(asset_url "$binary")"
+  url="https://github.com/$REPO/releases/download/v$VERSION/$binary-v$VERSION-$triple.$archive_ext"
   archive="$work/$binary.$archive_ext"
   extract="$work/$binary"
   mkdir -p "$extract"
